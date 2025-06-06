@@ -1,41 +1,25 @@
-name: Push image to YCR
+name: Build & Push proxy to YCR
 on:
   push:
-    branches: [main]                 # если главная ветка называется иначе — поменяйте
+    branches: [main]          # поменяй, если главная ветка не main
 
 jobs:
-  push-image:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-    # 0. Клонируем репо
     - uses: actions/checkout@v4
 
-    # 1. Логинимся в Yandex Container Registry
-    - name: Login to YCR
-      uses: yc-actions/yc-cr-login@v3
+    # Авторизация в YCR (использует твой JSON-ключ)
+    - uses: yc-actions/yc-cr-login@v3
       with:
         yc-sa-json-credentials: ${{ secrets.YC_SA_JSON }}
 
-    # 2. Логинимся в GitHub Container Registry (решает 403)
-    - name: Login to GHCR
-      run: echo "${{ secrets.GHCR_PAT }}" \
-           | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-    # 3. Тянем готовый прокси-образ
-    - name: Pull upstream proxy
-      run: docker pull ghcr.io/vitaliy-vi/yandex-stt-ws-proxy:latest
-
-    # 4. Тегируем под ваш реестр
-    - name: Retag for YCR
-      env:
-        REGISTRY: ${{ secrets.YC_REGISTRY_ID }}
-      run: |
-        docker tag ghcr.io/vitaliy-vi/yandex-stt-ws-proxy:latest \
-                  cr.yandex/$REGISTRY/stt-proxy:latest
-
-    # 5. Пушим в YCR
-    - name: Push to YCR
-      env:
-        REGISTRY: ${{ secrets.YC_REGISTRY_ID }}
-      run: docker push cr.yandex/$REGISTRY/stt-proxy:latest
+    # Собираем Docker-образ по Dockerfile и сразу пушим
+    - name: Build & Push
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/stt-proxy:latest
+        platforms: linux/amd64
