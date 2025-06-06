@@ -1,0 +1,30 @@
+name: Push image to YCR
+on:
+  push:
+    branches: [main]          # если главная ветка называется иначе — поменяйте
+jobs:
+  push-image:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Login to YCR
+      uses: yc-actions/yc-cr-login@v3
+      with:
+        yc-sa-json-credentials: ${{ secrets.YC_SA_JSON }}
+
+    - name: Pull upstream proxy
+      run: docker pull ghcr.io/vitaliy-vi/yandex-stt-ws-proxy:latest
+
+    - name: Retag for YCR
+      env:
+        REGISTRY: ${{ secrets.YC_REGISTRY_ID }}
+      run: |
+        docker tag ghcr.io/vitaliy-vi/yandex-stt-ws-proxy:latest \
+                  cr.yandex/$REGISTRY/stt-proxy:latest
+
+    - name: Push to YCR
+      env:
+        REGISTRY: ${{ secrets.YC_REGISTRY_ID }}
+      run: docker push cr.yandex/$REGISTRY/stt-proxy:latest
