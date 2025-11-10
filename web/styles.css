@@ -1,0 +1,336 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f4f6;
+  --surface: #ffffff;
+  --surface-alt: #f0f3ff;
+  --border: #d9dbe9;
+  --text: #1f1f29;
+  --text-muted: #60637a;
+  --accent: #6366f1;
+  --accent-strong: #4f46e5;
+  --danger: #dc2626;
+  --success: #16a34a;
+  font-family: 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font, 'Segoe UI', sans-serif);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.page-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 1.5rem clamp(1rem, 4vw, 3rem);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.page-header__inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page-header__subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  max-width: 40rem;
+}
+
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 25rem);
+  gap: 1.5rem;
+  padding: 1.5rem clamp(1rem, 4vw, 3rem) 2.5rem;
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.layout__main,
+.layout__aside {
+  min-width: 0;
+}
+
+.tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.5rem;
+}
+
+.table-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(18, 22, 33, 0.05);
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.table-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem 0.5rem;
+}
+
+.table-card__name {
+  border: none;
+  background: transparent;
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+  width: 100%;
+}
+
+.table-card__name:focus {
+  outline: none;
+  background: var(--surface-alt);
+}
+
+.table-card__status {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.table-card__status[data-state='active'] {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--accent-strong);
+}
+
+.table-card__status[data-state='completed'] {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--success);
+}
+
+.table-card__status[data-state='idle'] {
+  background: rgba(96, 99, 122, 0.12);
+}
+
+.table-card__body {
+  padding: 0 1.5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.table-card__info {
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+  color: var(--text-muted);
+}
+
+.table-card__info dt {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.table-card__info dd {
+  margin: 0.35rem 0 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.progress__bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  width: 0;
+  transition: width 0.2s ease;
+}
+
+.table-card__form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.field input[type='number'] {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.45rem 0.75rem;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.field input[type='number']:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.table-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.55rem 1.2rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.secondary {
+  background: var(--surface-alt);
+  color: var(--text);
+  border: 1px solid transparent;
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.danger {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.18);
+}
+
+.text-button {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0.25rem 0.5rem;
+}
+
+.text-button:hover {
+  color: var(--accent-strong);
+}
+
+.log {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-shadow: 0 12px 40px rgba(18, 22, 33, 0.05);
+}
+
+.log__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.log__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.log__item {
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: var(--surface-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.log__item time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.log__item[data-type='warning'] {
+  background: rgba(250, 204, 21, 0.18);
+}
+
+.log__item[data-type='success'] {
+  background: rgba(22, 163, 74, 0.18);
+}
+
+.log__item[data-type='info'] {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.empty-state {
+  background: var(--surface);
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+}
