@@ -1,11 +1,31 @@
-const STORAGE_KEY = 'hookah-table-manager-state-v3';
-const TABLE_COUNT = 20;
+const STORAGE_KEY = 'hookah-table-manager-state-v4';
+const TABLE_NAMES = [
+  'Стол 1',
+  'Стол 2',
+  'Стол 3',
+  'Стол 4',
+  'Стол 5',
+  'Стол 6',
+  'Стол 7',
+  'Стол 8',
+  'Стол 9',
+  'Стол 10',
+  'Стол 11',
+  'Стол 12',
+  'Стол 13',
+  'Стол 14',
+  'Бар №1',
+  'Бар №2',
+  'Бар №3',
+  'Стафф',
+];
+const TABLE_COUNT = TABLE_NAMES.length;
 const HOOKAHS_PER_TABLE = 4;
 const DEFAULT_ENABLED_HOOKAHS = 1;
-const SESSION_DURATION_MINUTES = 90;
+const SESSION_DURATION_MINUTES = 120;
 const DEFAULT_INTERVAL_MINUTES = 20;
 const FREQUENCY_OPTIONS = [1, 5, 15, 20, 30, 40];
-const WARNING_THRESHOLD_MS = 60 * 1000;
+const WARNING_THRESHOLD_MS = 3 * 60 * 1000;
 
 const tableContainer = document.querySelector('[data-table-list]');
 const clearLogButton = document.querySelector('[data-action="clear-log"]');
@@ -16,22 +36,10 @@ const modal = document.querySelector('[data-modal]');
 const modalName = modal?.querySelector('[data-modal-name]');
 const modalHookahList = modal?.querySelector('[data-modal-hookah-list]');
 const modalFreeButton = modal?.querySelector('[data-role="free"]');
-const alarm = document.querySelector('[data-alarm]');
-const alarmTitle = alarm?.querySelector('[data-alarm-title]');
-const alarmSubtitle = alarm?.querySelector('[data-alarm-subtitle]');
-const alarmCloseButton = alarm?.querySelector('[data-alarm-close]');
-
-let audioContext = null;
-let audioUnlockBound = false;
-let alarmOscillator = null;
-let alarmGain = null;
-let alarmIntervalId = null;
 
 let tables = loadTables();
 let notifications = [];
 let selectedTableId = null;
-let activeAlarm = null;
-let alarmQueue = [];
 
 function createHookah(index) {
   return {
@@ -79,17 +87,21 @@ function ensureHookahDefaults(rawHookah, index) {
   return hookah;
 }
 
+function getTableName(index) {
+  return TABLE_NAMES[index] ?? `Стол ${index + 1}`;
+}
+
 function createTable(index) {
   return {
-    id: `table-${index}`,
-    name: `Стол ${index}`,
+    id: `table-${index + 1}`,
+    name: getTableName(index),
     enabledHookahCount: DEFAULT_ENABLED_HOOKAHS,
     hookahs: Array.from({ length: HOOKAHS_PER_TABLE }, (_, hookahIndex) => createHookah(hookahIndex + 1)),
   };
 }
 
 function ensureTableDefaults(rawTable, index) {
-  const base = createTable(index + 1);
+  const base = createTable(index);
   if (!rawTable || typeof rawTable !== 'object') {
     return base;
   }
@@ -138,7 +150,7 @@ function loadTables() {
 }
 
 function createDefaultTables() {
-  return Array.from({ length: TABLE_COUNT }, (_, index) => createTable(index + 1));
+  return Array.from({ length: TABLE_COUNT }, (_, index) => createTable(index));
 }
 
 function saveTables() {
@@ -192,7 +204,7 @@ function renderTables() {
       nameNode.textContent = table.name;
     }
     if (statusNode) {
-      statusNode.textContent = getTableSummary(table);
+      statusNode.textContent = getTableSummary(table, now);
     }
     if (hookahList) {
       hookahList.innerHTML = '';
@@ -231,15 +243,21 @@ function renderTables() {
   }
 }
 
-function getTableSummary(table) {
+function getTableSummary(table, now) {
   const visibleHookahs = getVisibleHookahs(table);
-  const active = visibleHookahs.filter((hookah) => hookah.status === 'active').length;
-  const completed = visibleHookahs.filter((hookah) => hookah.status === 'completed').length;
-  if (active > 0) {
-    return `Активно: ${active}/${getVisibleHookahCount(table)}`;
+  const activeHookahs = visibleHookahs.filter((hookah) => hookah.status === 'active');
+  if (activeHookahs.length > 0) {
+    const remaining = activeHookahs
+      .map((hookah) => (hookah.expectedEndTime ? hookah.expectedEndTime - now : 0))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (remaining.length > 0) {
+      const maxMs = Math.max(...remaining);
+      return `Осталось: ${formatTableRemaining(maxMs)}`;
+    }
+    return 'Осталось: менее минуты';
   }
-  if (completed > 0) {
-    return `Завершено: ${completed}`;
+  if (visibleHookahs.some((hookah) => hookah.status === 'completed')) {
+    return 'Завершён';
   }
   return 'Свободен';
 }
@@ -309,6 +327,42 @@ function formatCountdown(ms) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+function formatTableRemaining(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return 'менее минуты';
+  }
+  const totalMinutes = Math.ceil(ms / (60 * 1000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (hours) {
+    parts.push(`${hours} ч`);
+  }
+  if (minutes || parts.length === 0) {
+    parts.push(`${minutes} мин`);
+  }
+  return parts.join(' ');
+}
+
+function formatSessionLength(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return `${DEFAULT_INTERVAL_MINUTES} мин`;
+  }
+  if (minutes % 60 === 0) {
+    const hours = minutes / 60;
+    const remainder = hours % 10;
+    const lastTwo = hours % 100;
+    let unit = 'часов';
+    if (remainder === 1 && lastTwo !== 11) {
+      unit = 'час';
+    } else if (remainder >= 2 && remainder <= 4 && (lastTwo < 12 || lastTwo > 14)) {
+      unit = 'часа';
+    }
+    return `${hours} ${unit}`;
+  }
+  return `${minutes} мин`;
+}
+
 function formatDuration(ms) {
   if (ms == null || Number.isNaN(ms)) {
     return '—';
@@ -361,6 +415,7 @@ function renderModal() {
     return;
   }
   const now = Date.now();
+  const sessionLabel = formatSessionLength(SESSION_DURATION_MINUTES);
   if (modalName) {
     modalName.textContent = table.name;
   }
@@ -454,7 +509,7 @@ function renderModal() {
       coalButton.className = 'secondary';
       coalButton.dataset.action = 'coal-change';
       coalButton.dataset.hookahIndex = String(index + 1);
-      coalButton.textContent = 'Угли сменены';
+      coalButton.textContent = 'Обновил угли';
       actions.appendChild(coalButton);
 
       const stopButton = document.createElement('button');
@@ -470,7 +525,10 @@ function renderModal() {
       startButton.className = 'primary';
       startButton.dataset.action = 'start-hookah';
       startButton.dataset.hookahIndex = String(index + 1);
-      startButton.textContent = hookah.status === 'completed' ? 'Перезапустить 90 мин' : 'Запустить 90 мин';
+      startButton.textContent =
+        hookah.status === 'completed'
+          ? `Перезапустить ${sessionLabel}`
+          : `Запустить ${sessionLabel}`;
       actions.appendChild(startButton);
     }
 
@@ -516,10 +574,6 @@ function startHookah(tableId, hookahIndex) {
   hookah.expectedEndTime = now + sessionMs;
   hookah.alertState = 'none';
   scheduleNextReminder(hookah, now);
-  removeQueuedAlarmsFor(tableId, Number(hookahIndex));
-  if (isAlarmActiveFor(tableId, Number(hookahIndex))) {
-    dismissAlarm(false);
-  }
   saveTables();
   renderTables();
   renderModal();
@@ -535,27 +589,6 @@ function scheduleNextReminder(hookah, now = Date.now()) {
   hookah.nextReminderTime = hookah.expectedEndTime
     ? Math.min(candidate, hookah.expectedEndTime)
     : candidate;
-}
-
-function acknowledgeReminder(tableId, hookahIndex) {
-  const table = tables.find((item) => item.id === tableId);
-  if (!table) {
-    return;
-  }
-  const hookah = getHookahByIndex(table, hookahIndex);
-  if (!hookah || hookah.status !== 'active') {
-    return;
-  }
-  const now = Date.now();
-  if (hookah.expectedEndTime && now >= hookah.expectedEndTime) {
-    completeHookah(tableId, hookahIndex);
-    return;
-  }
-  hookah.alertState = 'none';
-  scheduleNextReminder(hookah, now);
-  saveTables();
-  renderTables();
-  renderModal();
 }
 
 function manualCoalChange(tableId, hookahIndex) {
@@ -577,10 +610,6 @@ function manualCoalChange(tableId, hookahIndex) {
   saveTables();
   renderTables();
   renderModal();
-  removeQueuedAlarmsFor(tableId, Number(hookahIndex));
-  if (isAlarmActiveFor(tableId, Number(hookahIndex))) {
-    dismissAlarm(false);
-  }
 }
 
 function completeHookah(tableId, hookahIndex) {
@@ -596,10 +625,6 @@ function completeHookah(tableId, hookahIndex) {
   hookah.alertState = 'none';
   hookah.nextReminderTime = null;
   hookah.expectedEndTime = hookah.expectedEndTime ?? Date.now();
-  removeQueuedAlarmsFor(tableId, Number(hookahIndex));
-  if (isAlarmActiveFor(tableId, Number(hookahIndex))) {
-    dismissAlarm(false);
-  }
   saveTables();
   renderTables();
   renderModal();
@@ -617,10 +642,6 @@ function freeTable(tableId) {
     hookah.expectedEndTime = null;
     hookah.nextReminderTime = null;
     hookah.alertState = 'none';
-    removeQueuedAlarmsFor(tableId, hookah.index);
-    if (isAlarmActiveFor(tableId, hookah.index)) {
-      dismissAlarm(false);
-    }
   });
   table.enabledHookahCount = DEFAULT_ENABLED_HOOKAHS;
   saveTables();
@@ -652,83 +673,10 @@ function updateHookahInterval(tableId, hookahIndex, newInterval) {
     }
     hookah.alertState = 'none';
     scheduleNextReminder(hookah, now);
-    removeQueuedAlarmsFor(tableId, Number(hookahIndex));
-    if (isAlarmActiveFor(tableId, Number(hookahIndex))) {
-      dismissAlarm(false);
-    }
   }
   saveTables();
   renderTables();
   renderModal();
-}
-
-function enqueueAlarm(table, hookah) {
-  const entry = {
-    id: createId(),
-    tableId: table.id,
-    hookahIndex: hookah.index,
-    title: `${table.name} • ${hookah.label}`,
-    subtitle: `Напоминание: каждые ${hookah.intervalMinutes} мин`,
-  };
-  alarmQueue.push(entry);
-  processAlarmQueue();
-}
-
-function processAlarmQueue() {
-  if (activeAlarm || !alarm) {
-    return;
-  }
-  while (alarmQueue.length) {
-    const next = alarmQueue.shift();
-    const table = tables.find((item) => item.id === next.tableId);
-    const hookah = table ? getHookahByIndex(table, next.hookahIndex) : null;
-    if (table && hookah && hookah.alertState === 'due' && hookah.status === 'active') {
-      showAlarm(next);
-      return;
-    }
-  }
-}
-
-function showAlarm(entry) {
-  if (!alarm) {
-    return;
-  }
-  activeAlarm = entry;
-  alarmTitle.textContent = entry.title;
-  alarmSubtitle.textContent = entry.subtitle;
-  alarm.hidden = false;
-  alarm.setAttribute('aria-hidden', 'false');
-  document.body.classList.add('is-alarm-open');
-  startAlarmSound();
-}
-
-function dismissAlarm(acknowledge = true) {
-  if (!alarm) {
-    return;
-  }
-  const current = activeAlarm;
-  if (!current) {
-    return;
-  }
-  stopAlarmSound();
-  alarm.hidden = true;
-  alarm.setAttribute('aria-hidden', 'true');
-  document.body.classList.remove('is-alarm-open');
-  activeAlarm = null;
-  if (acknowledge) {
-    acknowledgeReminder(current.tableId, current.hookahIndex);
-  }
-  processAlarmQueue();
-}
-
-function removeQueuedAlarmsFor(tableId, hookahIndex) {
-  alarmQueue = alarmQueue.filter(
-    (entry) => !(entry.tableId === tableId && entry.hookahIndex === hookahIndex),
-  );
-}
-
-function isAlarmActiveFor(tableId, hookahIndex) {
-  return !!activeAlarm && activeAlarm.tableId === tableId && activeAlarm.hookahIndex === hookahIndex;
 }
 
 function processTimers() {
@@ -754,7 +702,6 @@ function processTimers() {
       if (hookah.nextReminderTime && now >= hookah.nextReminderTime) {
         hookah.alertState = 'due';
         hookah.nextReminderTime = null;
-        enqueueAlarm(table, hookah);
         showNotification(`${table.name} • ${hookah.label}: пора сменить угли.`, 'warning');
         dirty = true;
       }
@@ -901,101 +848,11 @@ function handleFreeTableClick() {
   freeTable(selectedTableId);
 }
 
-function handleAlarmClose() {
-  if (activeAlarm) {
-    dismissAlarm(true);
-  }
-}
-
 function handleGlobalKeydown(event) {
-  if (event.key === 'Escape') {
-    if (activeAlarm) {
-      event.preventDefault();
-      dismissAlarm(true);
-      return;
-    }
-    if (selectedTableId) {
-      event.preventDefault();
-      closeTableModal();
-    }
+  if (event.key === 'Escape' && selectedTableId) {
+    event.preventDefault();
+    closeTableModal();
   }
-}
-
-function ensureAudioContext() {
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) {
-    return null;
-  }
-  if (!audioContext) {
-    audioContext = new AudioCtx();
-  }
-  if (audioContext.state === 'suspended') {
-    audioContext.resume().catch(() => {});
-  }
-  return audioContext;
-}
-
-function startAlarmSound() {
-  const ctx = ensureAudioContext();
-  if (!ctx || ctx.state !== 'running') {
-    return;
-  }
-  stopAlarmSound();
-  const oscillator = ctx.createOscillator();
-  const gain = ctx.createGain();
-  oscillator.type = 'triangle';
-  oscillator.frequency.setValueAtTime(520, ctx.currentTime);
-  oscillator.connect(gain);
-  gain.connect(ctx.destination);
-  const pulse = () => {
-    const now = ctx.currentTime;
-    gain.gain.cancelScheduledValues(now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.4, now + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
-  };
-  pulse();
-  alarmIntervalId = window.setInterval(pulse, 700);
-  oscillator.start();
-  alarmOscillator = oscillator;
-  alarmGain = gain;
-}
-
-function stopAlarmSound() {
-  if (alarmIntervalId) {
-    window.clearInterval(alarmIntervalId);
-    alarmIntervalId = null;
-  }
-  if (alarmOscillator) {
-    try {
-      alarmOscillator.stop();
-    } catch (error) {
-      // ignore stop errors
-    }
-    alarmOscillator.disconnect();
-    alarmOscillator = null;
-  }
-  if (alarmGain) {
-    alarmGain.disconnect();
-    alarmGain = null;
-  }
-}
-
-function handleAudioUnlock() {
-  const ctx = ensureAudioContext();
-  if (ctx && ctx.state === 'running') {
-    window.removeEventListener('pointerdown', handleAudioUnlock);
-    window.removeEventListener('keydown', handleAudioUnlock);
-  }
-}
-
-function setupAudioUnlock() {
-  if (audioUnlockBound) {
-    return;
-  }
-  window.addEventListener('pointerdown', handleAudioUnlock, { passive: true });
-  window.addEventListener('keydown', handleAudioUnlock);
-  audioUnlockBound = true;
 }
 
 clearLogButton?.addEventListener('click', clearLog);
@@ -1003,15 +860,8 @@ tableContainer?.addEventListener('click', handleTableContainerClick);
 tableContainer?.addEventListener('keydown', handleTableKeydown);
 modal?.addEventListener('click', handleModalClick);
 modalFreeButton?.addEventListener('click', handleFreeTableClick);
-alarmCloseButton?.addEventListener('click', handleAlarmClose);
-alarm?.addEventListener('click', (event) => {
-  if (event.target === alarm) {
-    dismissAlarm(true);
-  }
-});
 document.addEventListener('keydown', handleGlobalKeydown);
 
-setupAudioUnlock();
 renderTables();
 renderNotifications();
 processTimers();
