@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'hookah-table-manager-state-v4';
+const STORAGE_KEY = 'hookah-table-manager-state-v5';
 const TABLE_NAMES = [
   'Стол 1',
   'Стол 2',
@@ -17,14 +17,15 @@ const TABLE_NAMES = [
   'Бар №1',
   'Бар №2',
   'Бар №3',
+  'Бар №4',
   'Стафф',
 ];
 const TABLE_COUNT = TABLE_NAMES.length;
-const HOOKAHS_PER_TABLE = 4;
-const DEFAULT_ENABLED_HOOKAHS = 1;
+const HOOKAHS_PER_TABLE = 8;
+const DEFAULT_ENABLED_HOOKAHS = 2;
 const SESSION_DURATION_MINUTES = 120;
 const DEFAULT_INTERVAL_MINUTES = 20;
-const FREQUENCY_OPTIONS = [1, 5, 15, 20, 30, 40];
+const FREQUENCY_OPTIONS = [1, 5, 10, 15, 20];
 const WARNING_THRESHOLD_MS = 3 * 60 * 1000;
 
 const tableContainer = document.querySelector('[data-table-list]');
@@ -36,10 +37,18 @@ const modal = document.querySelector('[data-modal]');
 const modalName = modal?.querySelector('[data-modal-name]');
 const modalHookahList = modal?.querySelector('[data-modal-hookah-list]');
 const modalFreeButton = modal?.querySelector('[data-role="free"]');
+const modalAddHookahButton = modal?.querySelector('[data-action="add-hookah"]');
+const notificationsPanel = document.querySelector('[data-notifications-panel]');
+const notificationsToggle = document.querySelector('[data-toggle-notifications]');
+const bulkRedButton = document.querySelector('[data-bulk-action="red"]');
+const bulkRedYellowButton = document.querySelector('[data-bulk-action="red-yellow"]');
+const bulkRedCount = document.querySelector('[data-count-red]');
+const bulkRedYellowCount = document.querySelector('[data-count-red-yellow]');
 
 let tables = loadTables();
 let notifications = [];
 let selectedTableId = null;
+let notificationsExpanded = false;
 
 function createHookah(index) {
   return {
@@ -190,6 +199,8 @@ function renderTables() {
   const now = Date.now();
   tableContainer.innerHTML = '';
   const fragment = document.createDocumentFragment();
+  let dueCount = 0;
+  let dueOrSoonCount = 0;
 
   tables.forEach((table) => {
     const node = cardTemplate.content.firstElementChild.cloneNode(true);
@@ -199,6 +210,7 @@ function renderTables() {
     const nameNode = node.querySelector('[data-name]');
     const statusNode = node.querySelector('[data-status]');
     const hookahList = node.querySelector('[data-hookah-list]');
+    const visibleHookahs = getVisibleHookahs(table);
 
     if (nameNode) {
       nameNode.textContent = table.name;
@@ -209,9 +221,10 @@ function renderTables() {
     if (hookahList) {
       hookahList.innerHTML = '';
       const hookahFragment = document.createDocumentFragment();
-      getVisibleHookahs(table).forEach((hookah) => {
+      visibleHookahs.forEach((hookah) => {
         const hookahNode = chipTemplate.content.firstElementChild.cloneNode(true);
-        hookahNode.dataset.alert = getHookahAlertLevel(hookah, now);
+        const alertLevel = getHookahAlertLevel(hookah, now);
+        hookahNode.dataset.alert = alertLevel;
         hookahNode.dataset.hookahIndex = hookah.index;
 
         const labelNode = hookahNode.querySelector('[data-label]');
@@ -228,6 +241,13 @@ function renderTables() {
           statusTextNode.textContent = getHookahStatusLabel(hookah);
         }
 
+        if (alertLevel === 'due') {
+          dueCount += 1;
+          dueOrSoonCount += 1;
+        } else if (alertLevel === 'soon') {
+          dueOrSoonCount += 1;
+        }
+
         hookahFragment.appendChild(hookahNode);
       });
       hookahList.appendChild(hookahFragment);
@@ -238,9 +258,39 @@ function renderTables() {
 
   tableContainer.appendChild(fragment);
 
+  updateBulkControls(dueCount, dueOrSoonCount);
+
   if (selectedTableId) {
     renderModal();
   }
+}
+
+function updateBulkControls(dueCount, dueOrSoonCount) {
+  if (bulkRedCount) {
+    bulkRedCount.textContent = String(dueCount);
+  }
+  if (bulkRedYellowCount) {
+    bulkRedYellowCount.textContent = String(dueOrSoonCount);
+  }
+  if (bulkRedButton) {
+    bulkRedButton.disabled = dueCount === 0;
+  }
+  if (bulkRedYellowButton) {
+    bulkRedYellowButton.disabled = dueOrSoonCount === 0;
+  }
+}
+
+function setNotificationsExpanded(expanded) {
+  notificationsExpanded = expanded;
+  if (notificationsToggle) {
+    notificationsToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    notificationsToggle.textContent = expanded ? 'Скрыть уведомления' : 'Показать уведомления';
+  }
+  if (notificationsPanel) {
+    notificationsPanel.hidden = !expanded;
+    notificationsPanel.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+  }
+  document.body.classList.toggle('notifications-open', expanded);
 }
 
 function getTableSummary(table, now) {
@@ -422,11 +472,13 @@ function renderModal() {
 
   modalHookahList.innerHTML = '';
   const fragment = document.createDocumentFragment();
+  const visibleHookahs = table.hookahs.slice(0, getVisibleHookahCount(table));
 
-  table.hookahs.forEach((hookah, index) => {
+  visibleHookahs.forEach((hookah) => {
     const section = document.createElement('section');
     section.className = 'hookah-settings';
-    section.dataset.hookahIndex = String(index + 1);
+    section.dataset.hookahIndex = String(hookah.index);
+    section.dataset.alert = getHookahAlertLevel(hookah, now);
 
     const header = document.createElement('header');
     header.className = 'hookah-settings__header';
@@ -489,7 +541,7 @@ function renderModal() {
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.role = 'frequency';
-      button.dataset.hookahIndex = String(index + 1);
+      button.dataset.hookahIndex = String(hookah.index);
       button.dataset.frequency = String(minutes);
       button.textContent = `${minutes} мин`;
       if (minutes === hookah.intervalMinutes) {
@@ -508,7 +560,7 @@ function renderModal() {
       coalButton.type = 'button';
       coalButton.className = 'secondary';
       coalButton.dataset.action = 'coal-change';
-      coalButton.dataset.hookahIndex = String(index + 1);
+      coalButton.dataset.hookahIndex = String(hookah.index);
       coalButton.textContent = 'Обновил угли';
       actions.appendChild(coalButton);
 
@@ -516,7 +568,7 @@ function renderModal() {
       stopButton.type = 'button';
       stopButton.className = 'danger';
       stopButton.dataset.action = 'complete-hookah';
-      stopButton.dataset.hookahIndex = String(index + 1);
+      stopButton.dataset.hookahIndex = String(hookah.index);
       stopButton.textContent = 'Завершить сеанс';
       actions.appendChild(stopButton);
     } else {
@@ -524,7 +576,7 @@ function renderModal() {
       startButton.type = 'button';
       startButton.className = 'primary';
       startButton.dataset.action = 'start-hookah';
-      startButton.dataset.hookahIndex = String(index + 1);
+      startButton.dataset.hookahIndex = String(hookah.index);
       startButton.textContent =
         hookah.status === 'completed'
           ? `Перезапустить ${sessionLabel}`
@@ -543,6 +595,14 @@ function renderModal() {
     modalFreeButton.textContent = 'Освободить стол';
     modalFreeButton.hidden = !hasBusyHookah;
     modalFreeButton.dataset.tableId = table.id;
+  }
+
+  if (modalAddHookahButton) {
+    const canAdd = table.enabledHookahCount < HOOKAHS_PER_TABLE;
+    modalAddHookahButton.textContent = canAdd
+      ? `Добавить кальян (${table.enabledHookahCount}/${HOOKAHS_PER_TABLE})`
+      : `Лимит кальянов достигнут (${table.enabledHookahCount}/${HOOKAHS_PER_TABLE})`;
+    modalAddHookahButton.disabled = !canAdd;
   }
 }
 
@@ -579,6 +639,21 @@ function startHookah(tableId, hookahIndex) {
   renderModal();
 }
 
+function addHookah(tableId) {
+  const table = tables.find((item) => item.id === tableId);
+  if (!table) {
+    return;
+  }
+  const nextCount = Math.min(HOOKAHS_PER_TABLE, normalizeEnabledHookahCount(table.enabledHookahCount + 1));
+  if (nextCount === table.enabledHookahCount) {
+    return;
+  }
+  table.enabledHookahCount = nextCount;
+  saveTables();
+  renderTables();
+  renderModal();
+}
+
 function scheduleNextReminder(hookah, now = Date.now()) {
   if (hookah.expectedEndTime && hookah.expectedEndTime <= now) {
     hookah.nextReminderTime = null;
@@ -610,6 +685,34 @@ function manualCoalChange(tableId, hookahIndex) {
   saveTables();
   renderTables();
   renderModal();
+}
+
+function bulkManualCoalChange(includeSoon) {
+  const now = Date.now();
+  let updated = false;
+
+  tables.forEach((table) => {
+    table.hookahs.forEach((hookah) => {
+      if (hookah.status !== 'active') {
+        return;
+      }
+      const alert = getHookahAlertLevel(hookah, now);
+      if (alert === 'due' || (includeSoon && alert === 'soon')) {
+        if (hookah.expectedEndTime && now >= hookah.expectedEndTime) {
+          return;
+        }
+        hookah.alertState = 'none';
+        scheduleNextReminder(hookah, now);
+        updated = true;
+      }
+    });
+  });
+
+  if (updated) {
+    saveTables();
+    renderTables();
+    renderModal();
+  }
 }
 
 function completeHookah(tableId, hookahIndex) {
@@ -836,6 +939,9 @@ function handleModalClick(event) {
         completeHookah(selectedTableId, hookahIndex);
       }
       break;
+    case 'add-hookah':
+      addHookah(selectedTableId);
+      break;
     default:
       break;
   }
@@ -861,6 +967,17 @@ tableContainer?.addEventListener('keydown', handleTableKeydown);
 modal?.addEventListener('click', handleModalClick);
 modalFreeButton?.addEventListener('click', handleFreeTableClick);
 document.addEventListener('keydown', handleGlobalKeydown);
+notificationsToggle?.addEventListener('click', () => {
+  setNotificationsExpanded(!notificationsExpanded);
+});
+bulkRedButton?.addEventListener('click', () => {
+  bulkManualCoalChange(false);
+});
+bulkRedYellowButton?.addEventListener('click', () => {
+  bulkManualCoalChange(true);
+});
+
+setNotificationsExpanded(false);
 
 renderTables();
 renderNotifications();
