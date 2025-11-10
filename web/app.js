@@ -48,6 +48,7 @@ const bulkRedYellowButton = document.querySelector('[data-bulk-action="red-yello
 const bulkRedCount = document.querySelector('[data-count-red]');
 const bulkRedYellowCount = document.querySelector('[data-count-red-yellow]');
 const hideInactiveToggle = document.querySelector('[data-hide-inactive]');
+const sortByUpcomingToggle = document.querySelector('[data-sort-upcoming]');
 const clockNode = document.querySelector('[data-clock]');
 
 let tables = loadTables();
@@ -56,6 +57,7 @@ let selectedTableId = null;
 let notificationsExpanded = false;
 let preferences = loadPreferences();
 let hideInactiveTables = Boolean(preferences.hideInactive);
+let sortByUpcoming = Boolean(preferences.sortByUpcoming);
 
 function createHookah(index) {
   return {
@@ -215,6 +217,7 @@ function loadPreferences() {
 function savePreferences() {
   preferences = {
     hideInactive: hideInactiveTables,
+    sortByUpcoming,
   };
   localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
 }
@@ -223,6 +226,15 @@ function setHideInactiveTables(nextValue) {
   hideInactiveTables = Boolean(nextValue);
   if (hideInactiveToggle) {
     hideInactiveToggle.checked = hideInactiveTables;
+  }
+  savePreferences();
+  renderTables();
+}
+
+function setSortByUpcomingTables(nextValue) {
+  sortByUpcoming = Boolean(nextValue);
+  if (sortByUpcomingToggle) {
+    sortByUpcomingToggle.checked = sortByUpcoming;
   }
   savePreferences();
   renderTables();
@@ -304,13 +316,10 @@ function renderTables() {
     return;
   }
   const now = Date.now();
-  tableContainer.innerHTML = '';
-  const fragment = document.createDocumentFragment();
   let dueCount = 0;
   let dueOrSoonCount = 0;
 
   tables.forEach((table) => {
-    const cardHookahs = getCardHookahs(table);
     table.hookahs.forEach((hookah) => {
       if (!hookah || hookah.status !== 'active') {
         return;
@@ -323,7 +332,44 @@ function renderTables() {
         dueOrSoonCount += 1;
       }
     });
+  });
 
+  const entries = tables.map((table, index) => ({
+    table,
+    index,
+    sortValue: getTableSortValue(table, now),
+  }));
+
+  if (sortByUpcoming) {
+    entries.sort((a, b) => {
+      if (a.sortValue === b.sortValue) {
+        return a.index - b.index;
+      }
+      if (a.sortValue === Number.NEGATIVE_INFINITY) {
+        return -1;
+      }
+      if (b.sortValue === Number.NEGATIVE_INFINITY) {
+        return 1;
+      }
+      const aFinite = Number.isFinite(a.sortValue);
+      const bFinite = Number.isFinite(b.sortValue);
+      if (aFinite && bFinite) {
+        return a.sortValue - b.sortValue;
+      }
+      if (aFinite) {
+        return -1;
+      }
+      if (bFinite) {
+        return 1;
+      }
+      return a.index - b.index;
+    });
+  }
+
+  tableContainer.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  entries.forEach(({ table }) => {
+    const cardHookahs = getCardHookahs(table);
     const shouldHide =
       hideInactiveTables &&
       !table.sessionExpired &&
@@ -450,6 +496,39 @@ function getTableAlertLevel(table, now) {
     return 'ok';
   }
   return 'inactive';
+}
+
+function getTableSortValue(table, now) {
+  if (table.sessionExpired) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  let sortValue = Infinity;
+  let hasActive = false;
+
+  table.hookahs.forEach((hookah) => {
+    if (!hookah || hookah.status !== 'active') {
+      return;
+    }
+    hasActive = true;
+    const alertLevel = getHookahAlertLevel(hookah, now);
+    if (alertLevel === 'due') {
+      sortValue = Math.min(sortValue, 0);
+      return;
+    }
+    if (hookah.nextReminderTime) {
+      const diff = hookah.nextReminderTime - now;
+      if (Number.isFinite(diff)) {
+        sortValue = Math.min(sortValue, diff);
+      }
+    }
+  });
+
+  if (!hasActive) {
+    return Infinity;
+  }
+
+  return sortValue;
 }
 
 function getHookahAlertLevel(hookah, now) {
@@ -1200,9 +1279,15 @@ bulkRedYellowButton?.addEventListener('click', () => {
 hideInactiveToggle?.addEventListener('change', (event) => {
   setHideInactiveTables(event.target.checked);
 });
+sortByUpcomingToggle?.addEventListener('change', (event) => {
+  setSortByUpcomingTables(event.target.checked);
+});
 setNotificationsExpanded(false);
 if (hideInactiveToggle) {
   hideInactiveToggle.checked = hideInactiveTables;
+}
+if (sortByUpcomingToggle) {
+  sortByUpcomingToggle.checked = sortByUpcoming;
 }
 updateClock();
 
