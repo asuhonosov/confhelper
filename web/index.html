@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Менеджер столов кальянной</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="page-header">
+    <div class="page-header__inner">
+      <div>
+        <h1>Менеджер столов кальянной</h1>
+        <p class="page-header__subtitle">
+          Следите за 18 столами, запускайте сеансы и выбирайте частоту смены углей в одно касание.
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="layout__main">
+      <div class="tables" data-table-list>
+        <!-- Таблицы будут отрисованы скриптом -->
+      </div>
+    </section>
+    <aside class="layout__aside">
+      <div class="log">
+        <div class="log__header">
+          <h2>Уведомления</h2>
+          <button type="button" class="text-button" data-action="clear-log">Очистить</button>
+        </div>
+        <ul class="log__list" data-log-list></ul>
+      </div>
+    </aside>
+  </main>
+
+  <template id="table-card-template">
+    <article
+      class="table-card"
+      data-table-id
+      data-action="open-table"
+      role="button"
+      tabindex="0"
+    >
+      <header class="table-card__header">
+        <span class="table-card__name" data-name></span>
+        <span class="table-card__status" data-status></span>
+      </header>
+      <div class="table-card__body">
+        <dl class="table-card__info">
+          <div>
+            <dt>Следующая замена углей</dt>
+            <dd data-next-change>—</dd>
+          </div>
+          <div>
+            <dt>До завершения сеанса</dt>
+            <dd data-session-remaining>—</dd>
+          </div>
+        </dl>
+        <div class="progress" aria-hidden="true">
+          <div class="progress__bar" data-progress></div>
+        </div>
+        <div class="table-card__footer">
+          <span>Интервал: <strong data-interval>—</strong></span>
+          <span class="table-card__hint">Нажмите, чтобы настроить</span>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <div class="modal" data-modal hidden aria-hidden="true">
+    <div class="modal__backdrop" data-modal-close></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="table-modal-title">
+      <header class="modal__header">
+        <div>
+          <p class="modal__eyebrow">Управление столом</p>
+          <h2 class="modal__title" id="table-modal-title" data-modal-name></h2>
+        </div>
+        <button type="button" class="icon-button" data-modal-close aria-label="Закрыть окно">
+          ×
+        </button>
+      </header>
+      <div class="modal__content">
+        <dl class="modal__stats">
+          <div>
+            <dt>Текущий интервал</dt>
+            <dd data-modal-interval>—</dd>
+          </div>
+          <div>
+            <dt>Следующая замена углей</dt>
+            <dd data-modal-next-change>—</dd>
+          </div>
+          <div>
+            <dt>До завершения сеанса</dt>
+            <dd data-modal-session-remaining>—</dd>
+          </div>
+        </dl>
+        <div class="frequency-picker">
+          <p>Частота смены углей</p>
+          <div class="frequency-picker__grid" data-frequency-options>
+            <button type="button" data-frequency="1">1 мин</button>
+            <button type="button" data-frequency="5">5 мин</button>
+            <button type="button" data-frequency="15">15 мин</button>
+            <button type="button" data-frequency="20">20 мин</button>
+            <button type="button" data-frequency="30">30 мин</button>
+          </div>
+        </div>
+        <p class="modal__note">Длительность сеанса фиксирована: 1 ч 30 мин.</p>
+      </div>
+      <footer class="modal__footer" data-modal-actions>
+        <button type="button" class="primary" data-role="start"></button>
+        <button type="button" class="secondary" data-role="remind"></button>
+        <button type="button" class="danger" data-role="stop"></button>
+      </footer>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
