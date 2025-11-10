@@ -12,7 +12,7 @@
       <div>
         <h1>Менеджер столов кальянной</h1>
         <p class="page-header__subtitle">
-          Следите за 18 столами, запускайте сеансы и выбирайте частоту смены углей в одно касание.
+          Контролируйте 20 столов и до четырёх кальянов на каждом, отслеживайте смену углей и завершение сеансов без переключения экранов.
         </p>
       </div>
     </div>
@@ -20,17 +20,15 @@
 
   <main class="layout">
     <section class="layout__main">
-      <div class="tables" data-table-list>
-        <!-- Таблицы будут отрисованы скриптом -->
-      </div>
+      <div class="tables" data-table-list></div>
     </section>
     <aside class="layout__aside">
-      <div class="log">
-        <div class="log__header">
+      <div class="notifications">
+        <div class="notifications__header">
           <h2>Уведомления</h2>
           <button type="button" class="text-button" data-action="clear-log">Очистить</button>
         </div>
-        <ul class="log__list" data-log-list></ul>
+        <ul class="notifications__list" data-log-list></ul>
       </div>
     </aside>
   </main>
@@ -47,26 +45,16 @@
         <span class="table-card__name" data-name></span>
         <span class="table-card__status" data-status></span>
       </header>
-      <div class="table-card__body">
-        <dl class="table-card__info">
-          <div>
-            <dt>Следующая замена углей</dt>
-            <dd data-next-change>—</dd>
-          </div>
-          <div>
-            <dt>До завершения сеанса</dt>
-            <dd data-session-remaining>—</dd>
-          </div>
-        </dl>
-        <div class="progress" aria-hidden="true">
-          <div class="progress__bar" data-progress></div>
-        </div>
-        <div class="table-card__footer">
-          <span>Интервал: <strong data-interval>—</strong></span>
-          <span class="table-card__hint">Нажмите, чтобы настроить</span>
-        </div>
-      </div>
+      <ul class="table-card__hookahs" data-hookah-list></ul>
     </article>
+  </template>
+
+  <template id="hookah-chip-template">
+    <li class="hookah-chip" data-alert>
+      <span class="hookah-chip__label" data-label></span>
+      <span class="hookah-chip__timer" data-timer></span>
+      <span class="hookah-chip__status" data-chip-status></span>
+    </li>
   </template>
 
   <div class="modal" data-modal hidden aria-hidden="true">
@@ -76,45 +64,27 @@
         <div>
           <p class="modal__eyebrow">Управление столом</p>
           <h2 class="modal__title" id="table-modal-title" data-modal-name></h2>
+          <p class="modal__note">Каждый кальян рассчитан на 1 ч 30 мин.</p>
         </div>
-        <button type="button" class="icon-button" data-modal-close aria-label="Закрыть окно">
-          ×
-        </button>
+        <button type="button" class="icon-button" data-modal-close aria-label="Закрыть окно">×</button>
       </header>
       <div class="modal__content">
-        <dl class="modal__stats">
-          <div>
-            <dt>Текущий интервал</dt>
-            <dd data-modal-interval>—</dd>
-          </div>
-          <div>
-            <dt>Следующая замена углей</dt>
-            <dd data-modal-next-change>—</dd>
-          </div>
-          <div>
-            <dt>До завершения сеанса</dt>
-            <dd data-modal-session-remaining>—</dd>
-          </div>
-        </dl>
-        <div class="frequency-picker">
-          <p>Частота смены углей</p>
-          <div class="frequency-picker__grid" data-frequency-options>
-            <button type="button" data-frequency="1">1 мин</button>
-            <button type="button" data-frequency="5">5 мин</button>
-            <button type="button" data-frequency="15">15 мин</button>
-            <button type="button" data-frequency="20">20 мин</button>
-            <button type="button" data-frequency="30">30 мин</button>
-          </div>
-        </div>
-        <p class="modal__note">Длительность сеанса фиксирована: 1 ч 30 мин.</p>
+        <div class="modal__hookah-list" data-modal-hookah-list></div>
       </div>
-      <footer class="modal__footer" data-modal-actions>
-        <button type="button" class="primary" data-role="start"></button>
-        <button type="button" class="secondary" data-role="remind"></button>
-        <button type="button" class="danger" data-role="stop"></button>
+      <footer class="modal__footer">
         <button type="button" class="ghost" data-role="free"></button>
       </footer>
     </div>
+  </div>
+
+  <div class="alarm" data-alarm hidden aria-hidden="true">
+    <div class="alarm__backdrop"></div>
+    <section class="alarm__card" role="alertdialog" aria-modal="true" aria-live="assertive">
+      <button type="button" class="alarm__close" data-alarm-close aria-label="Закрыть уведомление">×</button>
+      <p class="alarm__eyebrow">Пора сменить угли</p>
+      <h2 class="alarm__title" data-alarm-title></h2>
+      <p class="alarm__subtitle" data-alarm-subtitle></p>
+    </section>
   </div>
 
   <script type="module" src="app.js"></script>
