@@ -3,26 +3,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Менеджер столов кальянной</title>
+  <title>HookahPlace Red Rose - менеджер кальянов</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="page-header">
     <div class="page-header__inner">
-      <div>
-        <h1>Менеджер столов кальянной</h1>
+      <div class="page-header__info">
+        <h1>HookahPlace Red Rose — менеджер кальянов</h1>
         <p class="page-header__subtitle">
-          Контролируйте 14 столов, три бара и стафф-зону с до четырьмя кальянами на каждом, отслеживайте смену углей и завершение сеансов без переключения экранов.
+          Контролируйте 14 столов, четыре бара и стафф-зону с до восьми кальянами на каждом, отслеживайте смену углей и время сеансов в едином рабочем окне.
         </p>
       </div>
     </div>
   </header>
 
-  <main class="layout">
+  <main class="layout" data-layout>
     <section class="layout__main">
+      <div class="control-bar">
+        <div class="control-bar__group">
+          <button type="button" class="control-button" data-bulk-action="red">
+            <span class="control-button__label">Поменял везде на красных —</span>
+            <span class="control-button__count" data-count-red>0</span>
+          </button>
+          <button type="button" class="control-button" data-bulk-action="red-yellow">
+            <span class="control-button__label">Поменял везде на красных и жёлтых —</span>
+            <span class="control-button__count" data-count-red-yellow>0</span>
+          </button>
+        </div>
+        <button type="button" class="toggle-notifications" data-toggle-notifications aria-expanded="false">
+          Показать уведомления
+        </button>
+      </div>
       <div class="tables" data-table-list></div>
     </section>
-    <aside class="layout__aside">
+    <aside class="layout__aside" data-notifications-panel hidden aria-hidden="true">
       <div class="notifications">
         <div class="notifications__header">
           <h2>Уведомления</h2>
@@ -72,12 +87,15 @@
         <div class="modal__hookah-list" data-modal-hookah-list></div>
       </div>
       <footer class="modal__footer">
-        <button type="button" class="ghost" data-role="free"></button>
+        <div class="modal__footer-actions">
+          <button type="button" class="ghost" data-role="free"></button>
+          <button type="button" class="primary" data-action="add-hookah"></button>
+        </div>
       </footer>
     </div>
   </div>
 
-  
+
 
   <script type="module" src="app.js"></script>
 </body>
