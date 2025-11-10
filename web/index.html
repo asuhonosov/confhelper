@@ -3,17 +3,35 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HookahPlace Red Rose - менеджер кальянов</title>
+  <title>HookahPlace Red Rose — Поток</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="page-header">
     <div class="page-header__inner">
-      <div class="page-header__info">
-        <h1>HookahPlace Red Rose — менеджер кальянов</h1>
-        <p class="page-header__subtitle">
-          Контролируйте 14 столов, четыре бара и стафф-зону с до восьми кальянами на каждом, отслеживайте смену углей и время сеансов в едином рабочем окне.
-        </p>
+      <div class="page-header__branding">
+        <img
+          class="page-header__logo"
+          src="https://static.tildacdn.com/tild6632-3163-4430-b366-376534646533/_1.svg"
+          alt="HookahPlace Red Rose"
+        />
+        <div class="page-header__info">
+          <h1>HookahPlace Red Rose — Поток</h1>
+          <p class="page-header__subtitle">
+            Контролируйте 14 столов, четыре бара и стафф-зону с до восьми кальянами на каждом, отслеживайте смену углей и время сеансов в едином рабочем окне.
+          </p>
+        </div>
+      </div>
+      <div class="page-header__actions">
+        <div class="theme-switcher" data-theme-toggle>
+          <input type="checkbox" id="theme-toggle" data-theme-checkbox />
+          <label for="theme-toggle" class="theme-switcher__label">
+            <span class="theme-switcher__track"></span>
+            <span class="theme-switcher__thumb"></span>
+            <span class="theme-switcher__text" data-theme-label>Тёмная тема</span>
+          </label>
+        </div>
+        <div class="page-header__clock" data-clock></div>
       </div>
     </div>
   </header>
@@ -30,6 +48,14 @@
             <span class="control-button__label">Поменял везде на красных и жёлтых —</span>
             <span class="control-button__count" data-count-red-yellow>0</span>
           </button>
+        </div>
+        <div class="control-bar__group control-bar__group--filters">
+          <label class="toggle-filter">
+            <input type="checkbox" data-hide-inactive />
+            <span class="toggle-filter__track"></span>
+            <span class="toggle-filter__thumb"></span>
+            <span class="toggle-filter__label">Скрывать свободные столы</span>
+          </label>
         </div>
         <button type="button" class="toggle-notifications" data-toggle-notifications aria-expanded="false">
           Показать уведомления
@@ -58,17 +84,17 @@
     >
       <header class="table-card__header">
         <span class="table-card__name" data-name></span>
-        <span class="table-card__status" data-status></span>
+        <span class="table-card__summary" data-summary></span>
       </header>
       <ul class="table-card__hookahs" data-hookah-list></ul>
+      <div class="table-card__footer" data-table-alert></div>
     </article>
   </template>
 
   <template id="hookah-chip-template">
     <li class="hookah-chip" data-alert>
-      <span class="hookah-chip__label" data-label></span>
+      <span class="hookah-chip__index" data-index></span>
       <span class="hookah-chip__timer" data-timer></span>
-      <span class="hookah-chip__status" data-chip-status></span>
     </li>
   </template>
 
@@ -89,7 +115,10 @@
       <footer class="modal__footer">
         <div class="modal__footer-actions">
           <button type="button" class="ghost" data-role="free"></button>
-          <button type="button" class="primary" data-action="add-hookah"></button>
+          <div class="modal__footer-buttons">
+            <button type="button" class="ghost" data-action="remove-hookah"></button>
+            <button type="button" class="primary" data-action="add-hookah"></button>
+          </div>
         </div>
       </footer>
     </div>
