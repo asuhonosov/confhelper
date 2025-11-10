@@ -556,7 +556,7 @@ function getHookahTimerText(hookah, now) {
     return '—';
   }
   if (hookah.alertState === 'due') {
-    return 'Обновить угли';
+    return 'Замена углей';
   }
   if (!hookah.nextReminderTime) {
     return '—';
@@ -724,7 +724,7 @@ function renderModal() {
     const nextValue = document.createElement('dd');
     if (hookah.status === 'active') {
       if (hookah.alertState === 'due') {
-        nextValue.textContent = 'Нужно обновить угли';
+        nextValue.textContent = 'Нужно заменить угли';
       } else if (hookah.nextReminderTime) {
         nextValue.textContent = formatDuration(hookah.nextReminderTime - now);
       } else {
@@ -789,7 +789,7 @@ function renderModal() {
       coalButton.className = 'secondary hookah-settings__coal-button';
       coalButton.dataset.action = 'coal-change';
       coalButton.dataset.hookahIndex = String(hookah.index);
-      coalButton.textContent = 'Обновил угли';
+      coalButton.textContent = 'Заменил угли';
       primaryAction.appendChild(coalButton);
 
       const stopButton = document.createElement('button');
@@ -1102,7 +1102,7 @@ function processTimers() {
       if (hookah.nextReminderTime && now >= hookah.nextReminderTime) {
         hookah.alertState = 'due';
         hookah.nextReminderTime = null;
-        showNotification(`${table.name} • ${hookah.label}: пора обновить угли.`, 'warning');
+        showNotification(`${table.name} • ${hookah.label}: пора заменить угли.`, 'warning');
         dirty = true;
       }
     });
