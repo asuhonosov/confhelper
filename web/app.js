@@ -27,7 +27,7 @@ const DEFAULT_ENABLED_HOOKAHS = 2;
 const MIN_ENABLED_HOOKAHS = 1;
 const SESSION_DURATION_MINUTES = 120;
 const DEFAULT_INTERVAL_MINUTES = 20;
-const FREQUENCY_OPTIONS = [1, 5, 10, 15, 20];
+const FREQUENCY_OPTIONS = [1, 5, 10, 15, 20, 25];
 const WARNING_THRESHOLD_MS = 3 * 60 * 1000;
 
 const tableContainer = document.querySelector('[data-table-list]');
