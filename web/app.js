@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'hookah-table-manager-state-v6';
-const PREFERENCES_KEY = 'hookah-table-manager-preferences-v1';
+const PREFERENCES_KEY = 'hookah-table-manager-preferences-v2';
 const TABLE_NAMES = [
   'Стол 1',
   'Стол 2',
@@ -48,8 +48,6 @@ const bulkRedYellowButton = document.querySelector('[data-bulk-action="red-yello
 const bulkRedCount = document.querySelector('[data-count-red]');
 const bulkRedYellowCount = document.querySelector('[data-count-red-yellow]');
 const hideInactiveToggle = document.querySelector('[data-hide-inactive]');
-const themeCheckbox = document.querySelector('[data-theme-checkbox]');
-const themeLabel = document.querySelector('[data-theme-label]');
 const clockNode = document.querySelector('[data-clock]');
 
 let tables = loadTables();
@@ -58,7 +56,6 @@ let selectedTableId = null;
 let notificationsExpanded = false;
 let preferences = loadPreferences();
 let hideInactiveTables = Boolean(preferences.hideInactive);
-let theme = preferences.theme === 'light' ? 'light' : 'dark';
 
 function createHookah(index) {
   return {
@@ -110,10 +107,25 @@ function getTableName(index) {
   return TABLE_NAMES[index] ?? `Стол ${index + 1}`;
 }
 
+function getTableKind(name) {
+  if (typeof name !== 'string') {
+    return 'table';
+  }
+  if (name.startsWith('Бар')) {
+    return 'bar';
+  }
+  if (name === 'Стафф') {
+    return 'staff';
+  }
+  return 'table';
+}
+
 function createTable(index) {
+  const name = getTableName(index);
   return {
     id: `table-${index + 1}`,
-    name: getTableName(index),
+    name,
+    kind: getTableKind(name),
     enabledHookahCount: DEFAULT_ENABLED_HOOKAHS,
     hookahs: Array.from({ length: HOOKAHS_PER_TABLE }, (_, hookahIndex) => createHookah(hookahIndex + 1)),
     sessionExpired: false,
@@ -128,6 +140,7 @@ function ensureTableDefaults(rawTable, index) {
   const table = { ...base, ...rawTable };
   table.id = base.id;
   table.name = base.name;
+  table.kind = getTableKind(table.name);
   const hookahs = Array.isArray(rawTable.hookahs) ? rawTable.hookahs : [];
   table.hookahs = Array.from({ length: HOOKAHS_PER_TABLE }, (_, hookahIndex) => {
     const stored = hookahs[hookahIndex];
@@ -152,6 +165,7 @@ function ensureTableDefaults(rawTable, index) {
   })();
   table.enabledHookahCount = normalizeEnabledHookahCount(inferredCount);
   table.sessionExpired = Boolean(rawTable.sessionExpired);
+  syncEnabledHookahCount(table);
   return table;
 }
 
@@ -200,27 +214,9 @@ function loadPreferences() {
 
 function savePreferences() {
   preferences = {
-    ...preferences,
-    theme,
     hideInactive: hideInactiveTables,
   };
   localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
-}
-
-function applyTheme(nextTheme) {
-  theme = nextTheme === 'light' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', theme);
-  updateThemeControls();
-  savePreferences();
-}
-
-function updateThemeControls() {
-  if (themeCheckbox) {
-    themeCheckbox.checked = theme === 'light';
-  }
-  if (themeLabel) {
-    themeLabel.textContent = theme === 'light' ? 'Светлая тема' : 'Тёмная тема';
-  }
 }
 
 function setHideInactiveTables(nextValue) {
@@ -252,7 +248,14 @@ function updateClock() {
   clockNode.textContent = `${dateFormatter.format(now)} ${timeFormatter.format(now)} МСК`;
 }
 
-function getVisibleHookahCount(table) {
+function getModalHookahCount(table) {
+  if (!table) {
+    return DEFAULT_ENABLED_HOOKAHS;
+  }
+  return normalizeEnabledHookahCount(table.enabledHookahCount);
+}
+
+function getCardHookahCount(table) {
   if (!table) {
     return DEFAULT_ENABLED_HOOKAHS;
   }
@@ -263,13 +266,37 @@ function getVisibleHookahCount(table) {
     return hookah.status === 'active' ? Math.max(max, hookah.index) : max;
   }, 0);
   const storedCount = normalizeEnabledHookahCount(table.enabledHookahCount);
-  const target = Math.max(storedCount, highestActive, MIN_ENABLED_HOOKAHS);
+  const baseline = Math.min(DEFAULT_ENABLED_HOOKAHS, Math.max(storedCount, MIN_ENABLED_HOOKAHS));
+  const target = Math.max(baseline, highestActive, MIN_ENABLED_HOOKAHS);
   return Math.min(HOOKAHS_PER_TABLE, target);
 }
 
-function getVisibleHookahs(table) {
-  const count = getVisibleHookahCount(table);
+function getCardHookahs(table) {
+  const count = getCardHookahCount(table);
   return table.hookahs.slice(0, count);
+}
+
+function getModalHookahs(table) {
+  const count = getModalHookahCount(table);
+  return table.hookahs.slice(0, count);
+}
+
+function syncEnabledHookahCount(table) {
+  if (!table) {
+    return;
+  }
+  const highestActive = table.hookahs.reduce((max, hookah) => {
+    if (!hookah || hookah.status !== 'active') {
+      return max;
+    }
+    return Math.max(max, hookah.index);
+  }, 0);
+  let nextCount = normalizeEnabledHookahCount(table.enabledHookahCount);
+  if (highestActive <= DEFAULT_ENABLED_HOOKAHS) {
+    nextCount = Math.min(nextCount, DEFAULT_ENABLED_HOOKAHS);
+  }
+  nextCount = Math.max(nextCount, highestActive, MIN_ENABLED_HOOKAHS);
+  table.enabledHookahCount = Math.min(HOOKAHS_PER_TABLE, nextCount);
 }
 
 function renderTables() {
@@ -283,8 +310,11 @@ function renderTables() {
   let dueOrSoonCount = 0;
 
   tables.forEach((table) => {
-    const visibleHookahs = getVisibleHookahs(table);
-    visibleHookahs.forEach((hookah) => {
+    const cardHookahs = getCardHookahs(table);
+    table.hookahs.forEach((hookah) => {
+      if (!hookah || hookah.status !== 'active') {
+        return;
+      }
       const alertLevel = getHookahAlertLevel(hookah, now);
       if (alertLevel === 'due') {
         dueCount += 1;
@@ -294,13 +324,17 @@ function renderTables() {
       }
     });
 
-    const shouldHide = hideInactiveTables && !table.sessionExpired && !table.hookahs.some((hookah) => hookah.status === 'active');
+    const shouldHide =
+      hideInactiveTables &&
+      !table.sessionExpired &&
+      !table.hookahs.some((hookah) => hookah.status === 'active');
     if (shouldHide) {
       return;
     }
 
     const node = cardTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.tableId = table.id;
+    node.dataset.kind = table.kind ?? 'table';
     node.dataset.alert = getTableAlertLevel(table, now);
     if (table.sessionExpired) {
       node.dataset.tableAlert = 'expired';
@@ -325,7 +359,7 @@ function renderTables() {
     if (hookahList) {
       hookahList.innerHTML = '';
       const hookahFragment = document.createDocumentFragment();
-      visibleHookahs.forEach((hookah) => {
+      cardHookahs.forEach((hookah) => {
         const hookahNode = chipTemplate.content.firstElementChild.cloneNode(true);
         const alertLevel = getHookahAlertLevel(hookah, now);
         hookahNode.dataset.alert = alertLevel;
@@ -387,8 +421,7 @@ function setNotificationsExpanded(expanded) {
 }
 
 function getTableSummary(table, now, sessionExpired = false) {
-  const visibleHookahs = getVisibleHookahs(table);
-  const activeHookahs = visibleHookahs.filter((hookah) => hookah.status === 'active');
+  const activeHookahs = table.hookahs.filter((hookah) => hookah.status === 'active');
   if (activeHookahs.length > 0) {
     const remaining = activeHookahs
       .map((hookah) => (hookah.expectedEndTime ? hookah.expectedEndTime - now : 0))
@@ -406,7 +439,7 @@ function getTableSummary(table, now, sessionExpired = false) {
 }
 
 function getTableAlertLevel(table, now) {
-  const levels = getVisibleHookahs(table).map((hookah) => getHookahAlertLevel(hookah, now));
+  const levels = getCardHookahs(table).map((hookah) => getHookahAlertLevel(hookah, now));
   if (levels.includes('due')) {
     return 'due';
   }
@@ -529,6 +562,9 @@ function openTableModal(tableId) {
   if (!modal) {
     return;
   }
+  if (selectedTableId && selectedTableId !== tableId) {
+    closeTableModal();
+  }
   selectedTableId = tableId;
   renderModal();
   modal.hidden = false;
@@ -542,10 +578,25 @@ function closeTableModal() {
   if (!modal) {
     return;
   }
+  let needsRefresh = false;
+  if (selectedTableId) {
+    const table = tables.find((item) => item.id === selectedTableId);
+    if (table) {
+      const previousCount = table.enabledHookahCount;
+      syncEnabledHookahCount(table);
+      if (table.enabledHookahCount !== previousCount) {
+        saveTables();
+        needsRefresh = true;
+      }
+    }
+  }
   selectedTableId = null;
   modal.hidden = true;
   modal.setAttribute('aria-hidden', 'true');
   document.body.style.overflow = '';
+  if (needsRefresh) {
+    renderTables();
+  }
 }
 
 function renderModal() {
@@ -565,7 +616,7 @@ function renderModal() {
 
   modalHookahList.innerHTML = '';
   const fragment = document.createDocumentFragment();
-  const visibleHookahs = table.hookahs.slice(0, getVisibleHookahCount(table));
+  const visibleHookahs = getModalHookahs(table);
 
   visibleHookahs.forEach((hookah) => {
     const section = document.createElement('section');
@@ -731,10 +782,8 @@ function startHookah(tableId, hookahIndex) {
   if (!hookah) {
     return;
   }
-  table.enabledHookahCount = Math.max(
-    getVisibleHookahCount(table),
-    normalizeEnabledHookahCount(hookah.index),
-  );
+  const currentCount = normalizeEnabledHookahCount(table.enabledHookahCount);
+  table.enabledHookahCount = Math.max(currentCount, hookah.index);
   const now = Date.now();
   const sessionMs = SESSION_DURATION_MINUTES * 60 * 1000;
   hookah.status = 'active';
@@ -758,8 +807,6 @@ function addHookah(tableId) {
     return;
   }
   table.enabledHookahCount = nextCount;
-  table.sessionExpired = false;
-  saveTables();
   renderTables();
   renderModal();
 }
@@ -1141,13 +1188,7 @@ bulkRedYellowButton?.addEventListener('click', () => {
 hideInactiveToggle?.addEventListener('change', (event) => {
   setHideInactiveTables(event.target.checked);
 });
-themeCheckbox?.addEventListener('change', (event) => {
-  applyTheme(event.target.checked ? 'light' : 'dark');
-});
-
 setNotificationsExpanded(false);
-
-applyTheme(theme);
 if (hideInactiveToggle) {
   hideInactiveToggle.checked = hideInactiveTables;
 }
