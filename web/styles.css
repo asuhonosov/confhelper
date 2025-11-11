@@ -31,12 +31,14 @@
   --chip-ok: rgba(16, 59, 61, 0.95);
   --chip-soon: rgba(122, 82, 18, 0.95);
   --chip-due: rgba(94, 24, 40, 0.95);
+  --chip-warmup: rgba(48, 54, 72, 0.95);
   --chip-text-contrast: #fef8ff;
-  --progress-track: rgba(255, 255, 255, 0.16);
+  --progress-track: rgba(255, 255, 255, 0.24);
   --progress-ok: #22d1b0;
   --progress-soon: #f2c94c;
   --progress-due: #ff5470;
-  --progress-gap: 2deg;
+  --progress-divider: rgba(255, 255, 255, 0.4);
+  --progress-gap: 4deg;
 }
 
 * {
@@ -377,7 +379,7 @@ body.notifications-open .layout__aside {
 .hookah-chip {
   border-radius: 16px;
   background: var(--chip-inactive);
-  padding: 1rem 1.25rem;
+  padding: 1.1rem 1.35rem;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -386,7 +388,7 @@ body.notifications-open .layout__aside {
   align-items: center;
   text-align: center;
   justify-content: center;
-  min-height: 128px;
+  min-height: 134px;
   width: 100%;
   position: relative;
 }
@@ -414,7 +416,7 @@ body.notifications-open .layout__aside {
 .hookah-chip::before {
   background: repeating-conic-gradient(
       transparent 0deg calc(var(--segment-angle, 90deg) - var(--progress-gap)),
-      rgba(0, 0, 0, 0.35) calc(var(--segment-angle, 90deg) - var(--progress-gap)) var(--segment-angle, 90deg)
+      var(--progress-divider) calc(var(--segment-angle, 90deg) - var(--progress-gap)) var(--segment-angle, 90deg)
     );
   mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px));
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px));
@@ -445,7 +447,7 @@ body.notifications-open .layout__aside {
   color: var(--text-strong);
   white-space: normal;
   word-break: normal;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
   text-align: center;
   line-height: 1.15;
   hyphens: none;
@@ -453,6 +455,11 @@ body.notifications-open .layout__aside {
 
 .hookah-chip[data-alert='inactive'] {
   background: var(--chip-inactive);
+}
+
+.hookah-chip[data-alert='warmup'] {
+  background: var(--chip-warmup);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .hookah-chip[data-alert='ok'] {
@@ -471,6 +478,10 @@ body.notifications-open .layout__aside {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
+.hookah-chip[data-alert='warmup'] .hookah-chip__timer {
+  color: var(--text-muted);
+}
+
 .hookah-chip[data-alert='ok'] .hookah-chip__timer {
   color: var(--green);
 }
@@ -481,6 +492,8 @@ body.notifications-open .layout__aside {
 
 .hookah-chip[data-alert='due'] .hookah-chip__timer {
   color: var(--red);
+  font-size: 1.45rem;
+  line-height: 1.2;
 }
 
 .table-card__footer {
@@ -613,8 +626,8 @@ body.notifications-open .layout__aside {
 
 .modal__dialog {
   position: relative;
-  width: min(960px, 90vw);
-  max-height: calc(100vh - 4rem);
+  width: min(1040px, 94vw);
+  max-height: calc(100vh - 3rem);
   display: flex;
   flex-direction: column;
   background: var(--surface-strong);
@@ -622,6 +635,113 @@ body.notifications-open .layout__aside {
   border: 1px solid var(--border-strong);
   box-shadow: 0 32px 64px rgba(3, 6, 14, 0.55);
   overflow: hidden;
+}
+
+.modal-transfer {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(3, 6, 14, 0.75);
+}
+
+.modal-transfer__dialog {
+  width: min(520px, 90vw);
+  background: var(--surface-strong);
+  border-radius: 18px;
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 24px 48px rgba(3, 6, 14, 0.6);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modal-transfer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.modal-transfer__header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.modal-transfer__description {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.modal-transfer__list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.modal-transfer__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.modal-transfer__option:not([disabled]):hover {
+  border-color: var(--accent-strong);
+}
+
+.modal-transfer__option[disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.modal-transfer__option.is-disabled {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.modal-transfer__option.is-selected {
+  border-color: var(--accent-strong);
+  background: rgba(197, 40, 61, 0.22);
+  box-shadow: 0 0 0 1px rgba(197, 40, 61, 0.4);
+}
+
+.modal-transfer__option-name {
+  font-size: 1rem;
+}
+
+.modal-transfer__option-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.modal-transfer__empty,
+.modal-transfer__hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 0.75rem 0.5rem;
+}
+
+.modal-transfer__footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .modal__header {
@@ -662,14 +782,14 @@ body.notifications-open .layout__aside {
 }
 
 .modal__content {
-  padding: 0 1.5rem 1.5rem;
+  padding: 0 1.75rem 1.75rem;
   overflow-y: auto;
 }
 
 .modal__hookah-list {
   display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.1rem;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
 }
 
 .hookah-settings {
@@ -686,6 +806,24 @@ body.notifications-open .layout__aside {
 .hookah-settings[data-alert='ok'] {
   border-color: rgba(45, 212, 191, 0.4);
   background: var(--chip-ok);
+  color: var(--text-strong);
+}
+
+.hookah-settings[data-alert='warmup'] {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--chip-warmup);
+}
+
+.hookah-settings[data-alert='soon'] {
+  border-color: rgba(250, 204, 21, 0.55);
+  background: var(--chip-soon);
+  color: var(--text-strong);
+}
+
+.hookah-settings[data-alert='due'] {
+  border-color: rgba(255, 77, 109, 0.65);
+  background: var(--chip-due);
+  box-shadow: 0 0 0 1px rgba(255, 77, 109, 0.35);
   color: var(--text-strong);
 }
 
@@ -727,6 +865,16 @@ body.notifications-open .layout__aside {
 .hookah-settings__badge--active {
   background: rgba(45, 212, 191, 0.2);
   color: var(--green);
+}
+
+.hookah-settings__badge--warmup {
+  background: rgba(108, 117, 158, 0.26);
+  color: var(--text-muted);
+}
+
+.hookah-settings__badge--due {
+  background: rgba(255, 77, 109, 0.2);
+  color: var(--red);
 }
 
 .hookah-settings__badge--completed {
@@ -867,22 +1015,9 @@ body.notifications-open .layout__aside {
   border-color: var(--accent-strong);
 }
 
-.hookah-settings[data-alert='soon'] {
-  border-color: rgba(250, 204, 21, 0.55);
-  background: var(--chip-soon);
-  color: var(--text-strong);
-}
-
-.hookah-settings[data-alert='due'] {
-  border-color: rgba(255, 77, 109, 0.6);
-  background: var(--chip-due);
-  box-shadow: 0 0 0 1px rgba(255, 77, 109, 0.25);
-  color: var(--text-strong);
-}
-
 .modal__footer {
   border-top: 1px solid var(--border);
-  padding: 1.1rem 1.5rem 1.4rem;
+  padding: 1.2rem 1.75rem 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
@@ -890,33 +1025,18 @@ body.notifications-open .layout__aside {
 
 .modal__transfer {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.85rem;
   width: 100%;
 }
 
-.modal__transfer-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.85rem;
+.modal__transfer-note {
+  margin: 0;
+  font-size: 0.9rem;
   color: var(--text-muted);
-  flex: 1 1 200px;
-}
-
-.modal__transfer-select {
-  min-width: 220px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
-  padding: 0.55rem 0.75rem;
-}
-
-.modal__transfer-select:disabled {
-  opacity: 0.6;
+  flex: 1 1 auto;
 }
 
 .modal__footer-actions {
