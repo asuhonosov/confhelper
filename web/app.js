@@ -520,40 +520,42 @@ function renderTables() {
       hookahList.innerHTML = '';
       const hookahFragment = document.createDocumentFragment();
       cardHookahs.forEach((hookah) => {
-      const hookahNode = chipTemplate.content.firstElementChild.cloneNode(true);
-      const alertLevel = getHookahAlertLevel(hookah, now);
-      hookahNode.dataset.alert = alertLevel;
-      hookahNode.dataset.hookahIndex = hookah.index;
-      hookahNode.dataset.tableId = table.id;
+        const hookahNode = chipTemplate.content.firstElementChild.cloneNode(true);
+        const alertLevel = getHookahAlertLevel(hookah, now);
+        const inWarmup = isHookahInWarmup(hookah, now);
+        hookahNode.dataset.alert = alertLevel;
+        hookahNode.dataset.hookahIndex = hookah.index;
+        hookahNode.dataset.tableId = table.id;
 
-      const indexNode = hookahNode.querySelector('[data-index]');
-      const timerNode = hookahNode.querySelector('[data-timer]');
+        const indexNode = hookahNode.querySelector('[data-index]');
+        const timerNode = hookahNode.querySelector('[data-timer]');
 
-      if (indexNode) {
-        indexNode.textContent = String(hookah.index);
-      }
-      if (timerNode) {
-        timerNode.textContent = getHookahTimerText(hookah, now);
-      }
+        if (indexNode) {
+          indexNode.textContent = String(hookah.index);
+        }
+        if (timerNode) {
+          timerNode.textContent = getHookahTimerText(hookah, now);
+        }
 
-      const progressRatio = getHookahProgressRatio(hookah, now);
-      if (progressRatio != null) {
-        const segments = getHookahSegmentCount(hookah);
-        hookahNode.dataset.segments = String(segments);
-        hookahNode.style.setProperty('--progress-angle', `${progressRatio * 360}deg`);
-        hookahNode.style.setProperty('--segment-angle', `${360 / segments}deg`);
-        hookahNode.style.setProperty('--progress-color', getProgressColor(alertLevel));
-        hookahNode.classList.add('hookah-chip--with-progress');
-      } else {
-        hookahNode.classList.remove('hookah-chip--with-progress');
-        hookahNode.style.removeProperty('--progress-angle');
-        hookahNode.style.removeProperty('--segment-angle');
-        hookahNode.style.removeProperty('--progress-color');
-        delete hookahNode.dataset.segments;
-      }
+        const progressRatio = getHookahProgressRatio(hookah, now);
+        const shouldShowProgress = progressRatio != null && !inWarmup;
+        if (shouldShowProgress) {
+          const segments = getHookahSegmentCount(hookah);
+          hookahNode.dataset.segments = String(segments);
+          hookahNode.style.setProperty('--progress-angle', `${progressRatio * 360}deg`);
+          hookahNode.style.setProperty('--segment-angle', `${360 / segments}deg`);
+          hookahNode.style.setProperty('--progress-color', getProgressColor(alertLevel));
+          hookahNode.classList.add('hookah-chip--with-progress');
+        } else {
+          hookahNode.classList.remove('hookah-chip--with-progress');
+          hookahNode.style.removeProperty('--progress-angle');
+          hookahNode.style.removeProperty('--segment-angle');
+          hookahNode.style.removeProperty('--progress-color');
+          delete hookahNode.dataset.segments;
+        }
 
-      hookahFragment.appendChild(hookahNode);
-    });
+        hookahFragment.appendChild(hookahNode);
+      });
       hookahList.appendChild(hookahFragment);
     }
 
@@ -1185,6 +1187,7 @@ function confirmTransfer() {
   }
   transferActiveHookahs(selectedTableId, pendingTransferTarget);
   closeTransferPanel();
+  closeTableModal();
 }
 
 function getHookahByIndex(table, hookahIndex) {
@@ -1317,6 +1320,31 @@ function manualCoalChange(tableId, hookahIndex) {
     completeHookah(tableId, hookahIndex, { auto: true });
     return;
   }
+  hookah.alertState = 'none';
+  scheduleNextReminder(hookah, now);
+  saveTables();
+  renderTables();
+  renderModal();
+}
+
+function skipWarmup(tableId, hookahIndex) {
+  const table = tables.find((item) => item.id === tableId);
+  if (!table) {
+    return;
+  }
+  const hookah = getHookahByIndex(table, hookahIndex);
+  if (!hookah || hookah.status !== 'active') {
+    return;
+  }
+  const now = Date.now();
+  const warmupEnd = getHookahWarmupEnd(hookah);
+  if (!warmupEnd || now >= warmupEnd) {
+    return;
+  }
+  hookah.warmupMinutes = 0;
+  hookah.startedAt = now;
+  const totalMinutes = hookah.intervalMinutes * getHookahSegmentCount(hookah);
+  hookah.expectedEndTime = now + totalMinutes * 60 * 1000;
   hookah.alertState = 'none';
   scheduleNextReminder(hookah, now);
   saveTables();
@@ -1660,10 +1688,16 @@ function clearLog() {
 
 function handleTableContainerClick(event) {
   const chip = event.target.closest('.hookah-chip');
-  if (chip && chip.dataset.alert === 'due') {
+  if (chip) {
     const tableId = chip.dataset.tableId;
     const hookahIndex = chip.dataset.hookahIndex;
-    if (tableId && hookahIndex) {
+    if (chip.dataset.alert === 'warmup' && tableId && hookahIndex) {
+      skipWarmup(tableId, hookahIndex);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (chip.dataset.alert === 'due' && tableId && hookahIndex) {
       manualCoalChange(tableId, hookahIndex);
       event.preventDefault();
       event.stopPropagation();
