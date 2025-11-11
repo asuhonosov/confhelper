@@ -37,10 +37,10 @@
   --progress-ok: #22d1b0;
   --progress-soon: #f2c94c;
   --progress-due: #ff5470;
-  --progress-divider: rgba(255, 255, 255, 0.75);
-  --progress-divider-width: 1.6deg;
-  --progress-ring-width: 12px;
-  --progress-gap: 4deg;
+  --progress-divider: rgba(255, 255, 255, 0.4);
+  --progress-height: 0.6rem;
+  --progress-segment-gap: 0.35rem;
+  --progress-segment-border: rgba(255, 255, 255, 0.26);
 }
 
 * {
@@ -328,7 +328,7 @@ body.notifications-open .layout__aside {
 .table-card {
   position: relative;
   border-radius: 18px;
-  padding: 1rem 1.1rem 0.95rem;
+  padding: 1rem 1.1rem 0.35rem;
   border: 1px solid var(--border);
   background: var(--surface-table);
   box-shadow: var(--shadow-soft);
@@ -379,16 +379,12 @@ body.notifications-open .layout__aside {
 }
 
 .hookah-chip {
-  --ring-inset: 0.45rem;
-  --ring-width: var(--progress-ring-width);
-  --progress-visible: 0;
-  --divider-visible: 0;
   border-radius: 20px;
   background: var(--chip-inactive);
-  padding: 1.15rem;
+  padding: 1.15rem 1.15rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.6rem;
   border: 1px solid var(--border);
   transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
   align-items: center;
@@ -398,60 +394,6 @@ body.notifications-open .layout__aside {
   aspect-ratio: 1 / 1;
   min-height: 150px;
   position: relative;
-  overflow: hidden;
-}
-
-.hookah-chip::after,
-.hookah-chip::before {
-  content: '';
-  position: absolute;
-  inset: var(--ring-inset);
-  border-radius: 50%;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-}
-
-.hookah-chip::after {
-  z-index: 1;
-  opacity: var(--progress-visible);
-  background: conic-gradient(
-    var(--progress-color, var(--progress-track)) 0deg var(--progress-angle, 0deg),
-    var(--progress-track) var(--progress-angle, 0deg) 360deg
-  );
-  mask: radial-gradient(
-    farthest-side,
-    transparent calc(100% - var(--ring-width)),
-    #000 calc(100% - var(--ring-width))
-  );
-  -webkit-mask: radial-gradient(
-    farthest-side,
-    transparent calc(100% - var(--ring-width)),
-    #000 calc(100% - var(--ring-width))
-  );
-}
-
-.hookah-chip::before {
-  z-index: 2;
-  opacity: var(--divider-visible);
-  background: repeating-conic-gradient(
-      var(--progress-divider) 0deg var(--progress-divider-width),
-      transparent var(--progress-divider-width) calc(var(--segment-angle, 90deg))
-    );
-  mask: radial-gradient(
-    farthest-side,
-    transparent calc(100% - var(--ring-width)),
-    #000 calc(100% - var(--ring-width))
-  );
-  -webkit-mask: radial-gradient(
-    farthest-side,
-    transparent calc(100% - var(--ring-width)),
-    #000 calc(100% - var(--ring-width))
-  );
-}
-
-.hookah-chip--with-progress {
-  --progress-visible: 1;
-  --divider-visible: 1;
 }
 
 .hookah-chip__index {
@@ -478,6 +420,35 @@ body.notifications-open .layout__aside {
   text-align: center;
   line-height: 1.15;
   hyphens: none;
+}
+
+.hookah-chip__progress {
+  width: 100%;
+  margin-top: 0.2rem;
+}
+
+.hookah-chip__segment-list {
+  display: flex;
+  width: 100%;
+  gap: var(--progress-segment-gap);
+}
+
+.hookah-chip__segment {
+  position: relative;
+  flex: 1;
+  height: var(--progress-height);
+  border-radius: 999px;
+  background: var(--progress-track);
+  border: 1px solid var(--progress-segment-border);
+  overflow: hidden;
+}
+
+.hookah-chip__segment-fill {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: var(--progress-track);
+  transition: width 0.3s ease;
 }
 
 .hookah-chip[data-alert='inactive'] {
@@ -524,7 +495,7 @@ body.notifications-open .layout__aside {
 
 .hookah-chip[data-alert='due'] .hookah-chip__timer {
   color: var(--red);
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   line-height: 1.25;
 }
 
