@@ -113,11 +113,10 @@
       </div>
       <footer class="modal__footer">
         <div class="modal__transfer">
-          <label class="modal__transfer-label">
-            Перенести активные кальяны на
-            <select class="modal__transfer-select" data-transfer-select></select>
-          </label>
-          <button type="button" class="secondary" data-action="transfer-hookahs">Перенести</button>
+          <p class="modal__transfer-note">Перенести активные кальяны</p>
+          <button type="button" class="secondary" data-action="open-transfer">
+            Выбрать стол для переноса
+          </button>
         </div>
         <div class="modal__footer-actions">
           <button type="button" class="ghost" data-role="free"></button>
@@ -127,6 +126,21 @@
           </div>
         </div>
       </footer>
+    </div>
+    <div class="modal-transfer" data-transfer-panel hidden aria-hidden="true">
+      <div class="modal-transfer__dialog" role="dialog" aria-modal="false">
+        <header class="modal-transfer__header">
+          <h3>Выбор стола для переноса</h3>
+          <button type="button" class="icon-button" data-transfer-close aria-label="Закрыть перенос">×</button>
+        </header>
+        <p class="modal-transfer__description">
+          Выберите стол с достаточным количеством свободных кальянов и подтвердите перенос.
+        </p>
+        <div class="modal-transfer__list" data-transfer-list></div>
+        <footer class="modal-transfer__footer">
+          <button type="button" class="secondary" data-transfer-confirm disabled>Подтвердить перенос</button>
+        </footer>
+      </div>
     </div>
   </div>
 
