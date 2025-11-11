@@ -104,7 +104,7 @@
         <div>
           <p class="modal__eyebrow">Управление столом</p>
           <h2 class="modal__title" id="table-modal-title" data-modal-name></h2>
-          <p class="modal__note">Каждый кальян рассчитан на 2 часа.</p>
+          <p class="modal__note">Настройте прогрев, частоту и число замен для каждого кальяна.</p>
         </div>
         <button type="button" class="icon-button" data-modal-close aria-label="Закрыть окно">×</button>
       </header>
@@ -112,6 +112,13 @@
         <div class="modal__hookah-list" data-modal-hookah-list></div>
       </div>
       <footer class="modal__footer">
+        <div class="modal__transfer">
+          <label class="modal__transfer-label">
+            Перенести активные кальяны на
+            <select class="modal__transfer-select" data-transfer-select></select>
+          </label>
+          <button type="button" class="secondary" data-action="transfer-hookahs">Перенести</button>
+        </div>
         <div class="modal__footer-actions">
           <button type="button" class="ghost" data-role="free"></button>
           <div class="modal__footer-buttons">
