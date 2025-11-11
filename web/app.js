@@ -186,6 +186,47 @@ function getHookahProgressRatio(hookah, now) {
   return clampProgress(elapsed / total);
 }
 
+function renderHookahProgress(node, hookah, alertLevel, now, inWarmup, progressRatio) {
+  const progressContainer = node.querySelector('[data-progress]');
+  const segmentList = node.querySelector('[data-segment-list]');
+
+  if (!progressContainer || !segmentList) {
+    return;
+  }
+
+  if (hookah.status !== 'active') {
+    progressContainer.hidden = true;
+    segmentList.innerHTML = '';
+    return;
+  }
+
+  const segments = getHookahSegmentCount(hookah);
+  const color = getProgressColor(alertLevel);
+  const effectiveProgress = !inWarmup && progressRatio != null ? progressRatio : 0;
+
+  segmentList.innerHTML = '';
+
+  for (let index = 0; index < segments; index += 1) {
+    const segmentNode = document.createElement('span');
+    segmentNode.className = 'hookah-chip__segment';
+
+    const fillNode = document.createElement('span');
+    fillNode.className = 'hookah-chip__segment-fill';
+
+    const start = index / segments;
+    const end = (index + 1) / segments;
+    const portion = clampProgress((effectiveProgress - start) / (end - start));
+
+    fillNode.style.width = `${portion * 100}%`;
+    fillNode.style.backgroundColor = color;
+
+    segmentNode.appendChild(fillNode);
+    segmentList.appendChild(segmentNode);
+  }
+
+  progressContainer.hidden = false;
+}
+
 function ensureHookahDefaults(rawHookah, index) {
   const base = createHookah(index + 1);
   if (!rawHookah || typeof rawHookah !== 'object') {
@@ -538,21 +579,7 @@ function renderTables() {
         }
 
         const progressRatio = getHookahProgressRatio(hookah, now);
-        const shouldShowProgress = progressRatio != null && !inWarmup;
-        if (shouldShowProgress) {
-          const segments = getHookahSegmentCount(hookah);
-          hookahNode.dataset.segments = String(segments);
-          hookahNode.style.setProperty('--progress-angle', `${progressRatio * 360}deg`);
-          hookahNode.style.setProperty('--segment-angle', `${360 / segments}deg`);
-          hookahNode.style.setProperty('--progress-color', getProgressColor(alertLevel));
-          hookahNode.classList.add('hookah-chip--with-progress');
-        } else {
-          hookahNode.classList.remove('hookah-chip--with-progress');
-          hookahNode.style.removeProperty('--progress-angle');
-          hookahNode.style.removeProperty('--segment-angle');
-          hookahNode.style.removeProperty('--progress-color');
-          delete hookahNode.dataset.segments;
-        }
+        renderHookahProgress(hookahNode, hookah, alertLevel, now, inWarmup, progressRatio);
 
         hookahFragment.appendChild(hookahNode);
       });
