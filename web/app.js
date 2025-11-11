@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'hookah-table-manager-state-v7';
+const STORAGE_KEY = 'hookah-table-manager-state-v8';
 const PREFERENCES_KEY = 'hookah-table-manager-preferences-v3';
 const TABLE_NAMES = [
   'Стол 1',
@@ -29,7 +29,7 @@ const DEFAULT_INTERVAL_MINUTES = 25;
 const FREQUENCY_OPTIONS = [1, 25, 35, 45];
 const MIN_CHANGES = 1;
 const MAX_CHANGES = 4;
-const DEFAULT_CHANGES = 1;
+const DEFAULT_CHANGES = 3;
 const WARMUP_MINUTES = 10;
 const WARNING_THRESHOLD_MS = 3 * 60 * 1000;
 
@@ -53,8 +53,11 @@ const bulkRedYellowCount = document.querySelector('[data-count-red-yellow]');
 const hideInactiveToggle = document.querySelector('[data-hide-inactive]');
 const sortByUpcomingToggle = document.querySelector('[data-sort-upcoming]');
 const clockNode = document.querySelector('[data-clock]');
-const modalTransferSelect = modal?.querySelector('[data-transfer-select]');
-const modalTransferButton = modal?.querySelector('[data-action="transfer-hookahs"]');
+const modalTransferOpenButton = modal?.querySelector('[data-action="open-transfer"]');
+const transferPanel = document.querySelector('[data-transfer-panel]');
+const transferList = transferPanel?.querySelector('[data-transfer-list]');
+const transferCloseButton = transferPanel?.querySelector('[data-transfer-close]');
+const transferConfirmButton = transferPanel?.querySelector('[data-transfer-confirm]');
 
 let tables = loadTables();
 let notifications = [];
@@ -63,9 +66,12 @@ let notificationsExpanded = false;
 let preferences = loadPreferences();
 let hideInactiveTables = Boolean(preferences.hideInactive);
 let sortByUpcoming = Boolean(preferences.sortByUpcoming);
+let modalActiveHookahCount = 0;
+let pendingTransferTarget = null;
 
 const PROGRESS_COLORS = {
   inactive: 'var(--progress-track)',
+  warmup: 'var(--progress-track)',
   ok: 'var(--progress-ok)',
   soon: 'var(--progress-soon)',
   due: 'var(--progress-due)',
@@ -113,6 +119,28 @@ function clampProgress(value) {
   return value;
 }
 
+function getHookahWarmupEnd(hookah) {
+  if (!hookah || !hookah.startedAt) {
+    return null;
+  }
+  const warmupMinutes = Number(hookah.warmupMinutes);
+  if (!Number.isFinite(warmupMinutes) || warmupMinutes <= 0) {
+    return null;
+  }
+  return hookah.startedAt + warmupMinutes * 60 * 1000;
+}
+
+function isHookahInWarmup(hookah, now) {
+  if (!hookah || hookah.status !== 'active') {
+    return false;
+  }
+  const warmupEnd = getHookahWarmupEnd(hookah);
+  if (!warmupEnd) {
+    return false;
+  }
+  return now < warmupEnd;
+}
+
 function getHookahSegmentCount(hookah) {
   if (!hookah) {
     return DEFAULT_CHANGES + 1;
@@ -145,11 +173,16 @@ function getHookahProgressRatio(hookah, now) {
   if (!hookah || hookah.status !== 'active' || !hookah.startedAt || !hookah.expectedEndTime) {
     return null;
   }
-  const total = hookah.expectedEndTime - hookah.startedAt;
+  const warmupEnd = getHookahWarmupEnd(hookah);
+  const progressStart = warmupEnd && warmupEnd > hookah.startedAt ? warmupEnd : hookah.startedAt;
+  if (warmupEnd && now < warmupEnd) {
+    return 0;
+  }
+  const total = hookah.expectedEndTime - progressStart;
   if (!Number.isFinite(total) || total <= 0) {
     return null;
   }
-  const elapsed = now - hookah.startedAt;
+  const elapsed = now - progressStart;
   return clampProgress(elapsed / total);
 }
 
@@ -590,7 +623,7 @@ function getTableAlertLevel(table, now) {
   if (levels.includes('soon')) {
     return 'soon';
   }
-  if (levels.includes('ok')) {
+  if (levels.includes('ok') || levels.includes('warmup')) {
     return 'ok';
   }
   return 'inactive';
@@ -633,6 +666,9 @@ function getHookahAlertLevel(hookah, now) {
   if (hookah.status !== 'active') {
     return 'inactive';
   }
+  if (isHookahInWarmup(hookah, now)) {
+    return 'warmup';
+  }
   if (hookah.alertState === 'due') {
     return 'due';
   }
@@ -656,6 +692,10 @@ function getHookahTimerText(hookah, now) {
   if (hookah.alertState === 'due') {
     return 'Обновить угли';
   }
+  const warmupEnd = getHookahWarmupEnd(hookah);
+  if (warmupEnd && now < warmupEnd) {
+    return formatCountdown(warmupEnd - now);
+  }
   if (!hookah.nextReminderTime) {
     return '—';
   }
@@ -665,7 +705,11 @@ function getHookahTimerText(hookah, now) {
 function getHookahStatusLabel(hookah) {
   switch (hookah.status) {
     case 'active':
-      return hookah.alertState === 'due' ? 'Ожидает' : 'Активен';
+      return hookah.alertState === 'due'
+        ? 'Ожидает'
+        : isHookahInWarmup(hookah, Date.now())
+        ? 'Прогрев'
+        : 'Активен';
     case 'completed':
       return 'Завершён';
     default:
@@ -759,6 +803,7 @@ function closeTableModal() {
   if (!modal) {
     return;
   }
+  closeTransferPanel();
   let needsRefresh = false;
   if (selectedTableId) {
     const table = tables.find((item) => item.id === selectedTableId);
@@ -791,6 +836,7 @@ function renderModal() {
   }
   const now = Date.now();
   const activeHookahCount = table.hookahs.filter((hookah) => hookah.status === 'active').length;
+  modalActiveHookahCount = activeHookahCount;
   if (modalName) {
     modalName.textContent = table.name;
   }
@@ -812,7 +858,18 @@ function renderModal() {
     title.textContent = hookah.label;
 
     const badge = document.createElement('span');
-    badge.className = `hookah-settings__badge hookah-settings__badge--${hookah.status}`;
+    badge.className = 'hookah-settings__badge';
+    if (hookah.status === 'active') {
+      badge.classList.add('hookah-settings__badge--active');
+      if (isHookahInWarmup(hookah, now)) {
+        badge.classList.add('hookah-settings__badge--warmup');
+      }
+      if (hookah.alertState === 'due') {
+        badge.classList.add('hookah-settings__badge--due');
+      }
+    } else if (hookah.status === 'completed') {
+      badge.classList.add('hookah-settings__badge--completed');
+    }
     badge.textContent = getHookahStatusLabel(hookah);
 
     header.append(title, badge);
@@ -995,50 +1052,139 @@ function renderModal() {
       : `Нельзя удалить (${table.enabledHookahCount}/${HOOKAHS_PER_TABLE})`;
     modalRemoveHookahButton.disabled = !canRemove;
   }
-  if (modalTransferSelect) {
-    const previousTarget = modalTransferSelect.value;
-    modalTransferSelect.innerHTML = '';
-    let hasSelection = false;
-    tables.forEach((candidate) => {
-      if (!candidate || candidate.id === table.id) {
-        return;
-      }
-      const option = document.createElement('option');
-      option.value = candidate.id;
-      option.textContent = candidate.name;
-      const candidateAvailable = candidate.hookahs.filter((hookah) => hookah.status !== 'active').length;
-      if (candidateAvailable < activeHookahCount) {
-        option.disabled = true;
-      }
-      if (candidate.id === previousTarget && !option.disabled) {
-        option.selected = true;
-        hasSelection = true;
-      }
-      modalTransferSelect.appendChild(option);
-    });
-    if (!hasSelection && modalTransferSelect.options.length > 0) {
-      const firstEnabledIndex = Array.from(modalTransferSelect.options).findIndex(
-        (option) => !option.disabled,
-      );
-      if (firstEnabledIndex >= 0) {
-        modalTransferSelect.selectedIndex = firstEnabledIndex;
-        hasSelection = true;
-      }
+  if (modalTransferOpenButton) {
+    modalTransferOpenButton.disabled = activeHookahCount === 0;
+  }
+  if (isTransferPanelOpen()) {
+    renderTransferPanelOptions();
+    updateTransferConfirmState();
+  }
+}
+
+function isTransferPanelOpen() {
+  return Boolean(transferPanel && !transferPanel.hasAttribute('hidden'));
+}
+
+function renderTransferPanelOptions() {
+  if (!transferPanel || !transferList || !selectedTableId) {
+    return;
+  }
+  const sourceTable = tables.find((item) => item.id === selectedTableId);
+  transferList.innerHTML = '';
+  if (!sourceTable) {
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  let hasOptions = false;
+  let pendingStillValid = false;
+
+  tables.forEach((candidate) => {
+    if (!candidate || candidate.id === sourceTable.id) {
+      return;
     }
-    const allDisabled = Array.from(modalTransferSelect.options).every((option) => option.disabled);
-    modalTransferSelect.disabled = modalTransferSelect.options.length === 0 || allDisabled;
+    const available = candidate.hookahs.filter((hookah) => hookah.status !== 'active').length;
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'modal-transfer__option';
+    option.dataset.targetId = candidate.id;
+    option.innerHTML = `
+      <span class="modal-transfer__option-name">${candidate.name}</span>
+      <span class="modal-transfer__option-meta">Свободно: ${available}</span>
+    `;
+    if (available < modalActiveHookahCount) {
+      option.disabled = true;
+      option.classList.add('is-disabled');
+    } else {
+      hasOptions = true;
+    }
+    if (pendingTransferTarget === candidate.id && !option.disabled) {
+      option.classList.add('is-selected');
+      pendingStillValid = true;
+    }
+    fragment.appendChild(option);
+  });
+
+  if (!pendingStillValid) {
+    pendingTransferTarget = null;
   }
-  if (modalTransferButton) {
-    const hasActive = activeHookahCount > 0;
-    const selectedOption = modalTransferSelect?.selectedOptions?.[0];
-    const selectionDisabled =
-      !modalTransferSelect ||
-      modalTransferSelect.disabled ||
-      modalTransferSelect.options.length === 0 ||
-      !selectedOption ||
-      selectedOption.disabled;
-    modalTransferButton.disabled = !hasActive || selectionDisabled;
+
+  if (!transferList) {
+    return;
   }
+
+  transferList.appendChild(fragment);
+
+  if (!transferList.children.length) {
+    const empty = document.createElement('p');
+    empty.className = 'modal-transfer__empty';
+    empty.textContent = 'Нет столов с достаточным количеством свободных кальянов.';
+    transferList.appendChild(empty);
+  } else if (!hasOptions) {
+    const hint = document.createElement('p');
+    hint.className = 'modal-transfer__hint';
+    hint.textContent = 'Свободных столов для переноса сейчас нет.';
+    transferList.appendChild(hint);
+  }
+}
+
+function openTransferPanel() {
+  if (!transferPanel || !selectedTableId || modalActiveHookahCount === 0) {
+    return;
+  }
+  pendingTransferTarget = null;
+  renderTransferPanelOptions();
+  updateTransferConfirmState();
+  transferPanel.hidden = false;
+  transferPanel.setAttribute('aria-hidden', 'false');
+  const focusTarget =
+    transferList?.querySelector('.modal-transfer__option:not([disabled])') ||
+    transferCloseButton ||
+    transferConfirmButton;
+  focusTarget?.focus?.();
+}
+
+function closeTransferPanel() {
+  if (!transferPanel) {
+    return;
+  }
+  transferPanel.hidden = true;
+  transferPanel.setAttribute('aria-hidden', 'true');
+  pendingTransferTarget = null;
+  updateTransferConfirmState();
+}
+
+function updateTransferConfirmState() {
+  if (!transferConfirmButton) {
+    return;
+  }
+  if (!pendingTransferTarget || modalActiveHookahCount === 0) {
+    transferConfirmButton.disabled = true;
+    return;
+  }
+  const candidate = tables.find((item) => item.id === pendingTransferTarget);
+  if (!candidate) {
+    transferConfirmButton.disabled = true;
+    return;
+  }
+  const available = candidate.hookahs.filter((hookah) => hookah.status !== 'active').length;
+  transferConfirmButton.disabled = available < modalActiveHookahCount;
+}
+
+function handleTransferSelection(targetId) {
+  if (!targetId) {
+    return;
+  }
+  pendingTransferTarget = targetId;
+  renderTransferPanelOptions();
+  updateTransferConfirmState();
+}
+
+function confirmTransfer() {
+  if (!selectedTableId || !pendingTransferTarget) {
+    return;
+  }
+  transferActiveHookahs(selectedTableId, pendingTransferTarget);
+  closeTransferPanel();
 }
 
 function getHookahByIndex(table, hookahIndex) {
@@ -1071,7 +1217,12 @@ function startHookah(tableId, hookahIndex) {
   hookah.alertState = 'none';
   const warmupMs = warmupMinutes * 60 * 1000;
   if (warmupMs > 0) {
-    hookah.nextReminderTime = Math.min(hookah.expectedEndTime, now + warmupMs);
+    const intervalMs = hookah.intervalMinutes * 60 * 1000;
+    const warmupEnd = now + warmupMs;
+    const firstReminder = warmupEnd + intervalMs;
+    hookah.nextReminderTime = hookah.expectedEndTime
+      ? Math.min(firstReminder, hookah.expectedEndTime)
+      : firstReminder;
   } else {
     scheduleNextReminder(hookah, now);
   }
@@ -1586,13 +1737,9 @@ function handleModalClick(event) {
     case 'remove-hookah':
       removeHookah(selectedTableId);
       break;
-    case 'transfer-hookahs': {
-      const targetId = modalTransferSelect?.value;
-      if (targetId) {
-        transferActiveHookahs(selectedTableId, targetId);
-      }
+    case 'open-transfer':
+      openTransferPanel();
       break;
-    }
     default:
       break;
   }
@@ -1609,9 +1756,6 @@ function handleModalChange(event) {
     }
     return;
   }
-  if (target instanceof HTMLSelectElement && target.hasAttribute('data-transfer-select')) {
-    renderModal();
-  }
 }
 
 function handleFreeTableClick() {
@@ -1622,7 +1766,15 @@ function handleFreeTableClick() {
 }
 
 function handleGlobalKeydown(event) {
-  if (event.key === 'Escape' && selectedTableId) {
+  if (event.key !== 'Escape') {
+    return;
+  }
+  if (isTransferPanelOpen()) {
+    event.preventDefault();
+    closeTransferPanel();
+    return;
+  }
+  if (selectedTableId) {
     event.preventDefault();
     closeTableModal();
   }
@@ -1637,6 +1789,16 @@ modalFreeButton?.addEventListener('click', handleFreeTableClick);
 document.addEventListener('keydown', handleGlobalKeydown);
 notificationsToggle?.addEventListener('click', () => {
   setNotificationsExpanded(!notificationsExpanded);
+});
+modalTransferOpenButton?.addEventListener('click', openTransferPanel);
+transferCloseButton?.addEventListener('click', closeTransferPanel);
+transferConfirmButton?.addEventListener('click', confirmTransfer);
+transferList?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-target-id]');
+  if (!button || button.disabled) {
+    return;
+  }
+  handleTransferSelection(button.dataset.targetId);
 });
 bulkRedButton?.addEventListener('click', () => {
   bulkManualCoalChange(false);
