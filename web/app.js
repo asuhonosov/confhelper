@@ -412,16 +412,11 @@ function renderTables() {
         }
         const hookahNode = chipTemplate.content.firstElementChild.cloneNode(true);
         const button = hookahNode.querySelector('[data-action="toggle-hookah"]');
-        const indexNode = hookahNode.querySelector('[data-index]');
         const timerNode = hookahNode.querySelector('[data-timer]');
         const removeButton = hookahNode.querySelector('[data-action="remove-hookah"]');
 
         hookahNode.dataset.tableId = table.id;
         hookahNode.dataset.hookahIndex = hookah.index;
-
-        if (indexNode) {
-          indexNode.textContent = String(hookah.index);
-        }
 
         const alert = getHookahAlertLevel(hookah, now);
         hookahNode.dataset.alert = alert;
@@ -704,7 +699,7 @@ function formatStopwatch(ms) {
   const totalMinutes = Math.max(0, Math.floor(ms / (60 * 1000)));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  return `${hours}:${minutes.toString().padStart(2, '0')}`;
 }
 
 function updateBulkControls(due, dueOrSoon) {
