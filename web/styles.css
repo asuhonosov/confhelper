@@ -14,10 +14,10 @@
   --warning: #ffc857;
   --danger: #ff5468;
   --inactive: #3c4258;
-  --chip-size: 72px;
-  --chip-gap: 12px;
-  --hookah-chip-min-width: 150px;
-  --table-columns: 4;
+  --chip-size: 64px;
+  --chip-gap: 10px;
+  --hookah-chip-min-width: 120px;
+  --table-columns: 6;
   --shadow: 0 12px 32px rgba(7, 10, 20, 0.45);
   --progress-track: rgba(255, 255, 255, 0.1);
 }
@@ -103,8 +103,8 @@ a {
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 20px;
-  padding: 24px 32px 48px;
+  gap: 16px;
+  padding: 20px 28px 40px;
 }
 
 .layout__main {
@@ -224,8 +224,8 @@ a {
 }
 
 .table-card__close--danger {
-  background: rgba(255, 84, 104, 0.18);
-  border-color: rgba(255, 84, 104, 0.45);
+  background: var(--surface-strong);
+  border-color: var(--border);
   color: var(--text-primary);
 }
 
@@ -274,26 +274,20 @@ a {
 .tables {
   display: grid;
   grid-template-columns: repeat(var(--table-columns), minmax(0, 1fr));
-  gap: 20px;
-}
-
-@media (max-width: 1400px) {
-  .tables {
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  }
+  gap: 16px;
 }
 
 .table-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 18px 20px;
+  gap: 10px;
+  padding: 16px 18px 14px;
   background: var(--surface);
-  border-radius: 20px;
+  border-radius: 18px;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   position: relative;
-  min-height: 220px;
+  min-height: 200px;
 }
 
 .table-card[data-alert="due"] {
@@ -306,24 +300,24 @@ a {
 
 .table-card__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .table-card__title {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .table-card__name {
   font-weight: 600;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .table-card__summary {
-  font-size: 16px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
@@ -339,41 +333,42 @@ a {
 }
 
 .table-card__footer {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
-  min-height: 18px;
+  min-height: 16px;
 }
 
 
   .hookah-chip {
     background: var(--surface-alt);
-    border-radius: 16px;
+    border-radius: 14px;
     border: 1px solid var(--border);
     padding: 6px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    min-height: calc(var(--chip-size) + 18px);
+    gap: 8px;
+    min-height: calc(var(--chip-size) + 16px);
     position: relative;
   }
 
   .hookah-chip__body {
     width: 100%;
     border: none;
-    border-radius: 14px;
+    border-radius: 12px;
     background: rgba(255, 255, 255, 0.04);
     color: inherit;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    padding: 22px 16px 26px;
+    gap: 10px;
+    padding: 18px 12px 20px;
     min-height: var(--chip-size);
     aspect-ratio: 1 / 1;
     cursor: pointer;
     position: relative;
     transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    z-index: 1;
   }
 
   .hookah-chip__body:hover {
@@ -406,26 +401,26 @@ a {
 
   .hookah-chip__index {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    width: 26px;
-    height: 26px;
+    top: 8px;
+    left: 8px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.35);
+    background: rgba(0, 0, 0, 0.4);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     font-weight: 600;
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .hookah-chip__timer {
     font-variant-numeric: tabular-nums;
-    font-size: 32px;
+    font-size: 30px;
   }
 
   .hookah-chip__plus {
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 600;
   }
 
@@ -453,11 +448,11 @@ a {
 
   .hookah-chip__bar {
     position: relative;
-    height: 10px;
+    height: 8px;
     border-radius: 999px;
-    background: rgba(8, 12, 24, 0.9);
-    border: 1px solid rgba(243, 245, 255, 0.22);
-    box-shadow: inset 0 0 0 1px rgba(5, 7, 14, 0.65);
+    background: rgba(8, 12, 24, 0.92);
+    border: 1px solid rgba(243, 245, 255, 0.25);
+    box-shadow: inset 0 0 0 1px rgba(5, 7, 14, 0.6);
     overflow: hidden;
   }
 
@@ -469,7 +464,7 @@ a {
     border-radius: inherit;
     transition: width 0.3s ease;
     z-index: 1;
-    opacity: 0.9;
+    opacity: 0.95;
   }
 
   .hookah-chip__bar-markers {
@@ -483,10 +478,10 @@ a {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 2px;
-    background: rgba(243, 245, 255, 0.88);
-    transform: translateX(-1px);
-    box-shadow: 0 0 0 1px rgba(8, 12, 24, 0.85);
+    width: 1px;
+    background: #f3f5ff;
+    transform: translateX(-0.5px);
+    box-shadow: 0 0 0 1px rgba(8, 12, 24, 0.9);
   }
 
 .notifications {
@@ -605,6 +600,12 @@ a {
   color: var(--text-muted);
 }
 
+.dialog__error {
+  margin: -6px 0 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
 .dialog__footer {
   display: flex;
   justify-content: flex-end;
@@ -714,23 +715,23 @@ a {
     position: absolute;
     top: 8px;
     right: 8px;
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    border: 1px solid transparent;
-    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: rgba(0, 0, 0, 0.35);
     color: var(--text-primary);
-    font-size: 16px;
+    font-size: 14px;
     line-height: 1;
     cursor: pointer;
     display: grid;
     place-items: center;
     transition: background 0.2s ease, border-color 0.2s ease;
-    z-index: 3;
+    z-index: 4;
   }
 
 .hookah-chip__remove:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.55);
   border-color: rgba(255, 255, 255, 0.4);
 }
 
@@ -793,19 +794,5 @@ a {
 }
 
 .hookah-chip__bar-marker::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.25);
-}
-.tables {
-  display: grid;
-  grid-template-columns: repeat(var(--table-columns), minmax(0, 1fr));
-  gap: 20px;
-}
-
-@media (max-width: 1400px) {
-  .tables {
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  }
+  display: none;
 }
