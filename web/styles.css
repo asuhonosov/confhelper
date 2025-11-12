@@ -34,6 +34,16 @@ body {
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   background: radial-gradient(circle at top, rgba(255, 70, 93, 0.18), transparent 45%), var(--background);
   color: var(--text-primary);
+  zoom: 0.9;
+  overflow-x: hidden;
+}
+
+@supports not (zoom: 1) {
+  body {
+    transform: scale(0.9);
+    transform-origin: top left;
+    width: calc(100% / 0.9);
+  }
 }
 
 a {
