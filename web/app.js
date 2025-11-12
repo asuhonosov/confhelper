@@ -803,6 +803,33 @@ function startHookah(tableId, hookahIndex) {
   renderTables();
 }
 
+function advanceHookahCycle(hookah, now) {
+  if (!hookah || hookah.status !== 'active') {
+    return;
+  }
+
+  const intervalMs = hookah.intervalMinutes * 60 * 1000;
+  const startReference = hookah.startedAt ?? now;
+  const lastReference = hookah.lastServiceAt ?? startReference;
+  const currentNext = hookah.nextReminderTime ?? (lastReference + intervalMs);
+
+  let nextReminderTime;
+
+  if (now < currentNext) {
+    nextReminderTime = currentNext + intervalMs;
+  } else {
+    nextReminderTime = now + intervalMs;
+  }
+
+  if (hookah.expectedEndTime && nextReminderTime > hookah.expectedEndTime) {
+    nextReminderTime = hookah.expectedEndTime;
+  }
+
+  hookah.nextReminderTime = nextReminderTime;
+  hookah.lastServiceAt = nextReminderTime - intervalMs;
+  hookah.alertNotified = null;
+}
+
 function acknowledgeHookah(tableId, hookahIndex) {
   const table = state.tables.find((item) => item.id === tableId);
   if (!table) {
@@ -813,13 +840,7 @@ function acknowledgeHookah(tableId, hookahIndex) {
     return;
   }
   const now = Date.now();
-  hookah.lastServiceAt = now;
-  const intervalMs = hookah.intervalMinutes * 60 * 1000;
-  hookah.nextReminderTime = now + intervalMs;
-  if (hookah.expectedEndTime && hookah.nextReminderTime > hookah.expectedEndTime) {
-    hookah.nextReminderTime = hookah.expectedEndTime;
-  }
-  hookah.alertNotified = null;
+  advanceHookahCycle(hookah, now);
   saveState();
   renderTables();
 }
@@ -1244,13 +1265,7 @@ function handleBulkAction(includeYellow = false) {
       }
       const alert = getHookahAlertLevel(hookah, now);
       if (alert === 'due' || (includeYellow && alert === 'soon')) {
-        hookah.lastServiceAt = now;
-        const intervalMs = hookah.intervalMinutes * 60 * 1000;
-        hookah.nextReminderTime = now + intervalMs;
-        if (hookah.expectedEndTime && hookah.nextReminderTime > hookah.expectedEndTime) {
-          hookah.nextReminderTime = hookah.expectedEndTime;
-        }
-        hookah.alertNotified = null;
+        advanceHookahCycle(hookah, now);
       }
     });
   });
