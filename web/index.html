@@ -177,16 +177,6 @@
             required
           />
         </label>
-        <label class="field">
-          <span class="field__label">Количество столов в строке</span>
-          <select name="tableColumns" class="field__control" required>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
-            <option value="6">6</option>
-          </select>
-        </label>
         <p class="dialog__hint">
           Настройки применяются ко всем новым кальянам и обновляют таймеры после подтверждения.
         </p>
@@ -208,18 +198,19 @@
       <form class="dialog__content" data-transfer-form>
         <label class="field">
           <span class="field__label">Откуда перенести</span>
-          <select name="from" class="field__control" required></select>
+          <select name="from" class="field__control" required data-transfer-from></select>
         </label>
         <label class="field">
           <span class="field__label">Куда перенести</span>
-          <select name="to" class="field__control" required></select>
+          <select name="to" class="field__control" required data-transfer-to></select>
         </label>
+        <p class="dialog__error" data-transfer-error hidden></p>
         <p class="dialog__hint">
           Все активные кальяны выбранного стола будут перенесены в свободные слоты целевого стола.
         </p>
         <footer class="dialog__footer">
           <button type="button" class="secondary" data-dialog-dismiss>Отмена</button>
-          <button type="submit" class="primary">Перенести</button>
+          <button type="submit" class="primary" data-transfer-submit>Перенести</button>
         </footer>
       </form>
     </div>
