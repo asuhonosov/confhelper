@@ -24,8 +24,6 @@ const TABLE_NAMES = [
   'Стафф',
 ];
 
-const TABLE_COLUMNS = 6;
-
 const DEFAULT_TABLE_DURATION_MINUTES = 120;
 const PREHEAT_MINUTES = 10;
 const HOOKAHS_PER_TABLE = 8;
@@ -106,8 +104,6 @@ function loadSettings() {
     replacements: 3,
     preheatEnabled: false,
     tableDurationMinutes: DEFAULT_TABLE_DURATION_MINUTES,
-    hookahWidth: 120,
-    tableColumns: TABLE_COLUMNS,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -121,15 +117,12 @@ function loadSettings() {
     const interval = Number(parsed.intervalMinutes ?? defaults.intervalMinutes);
     const replacements = Number(parsed.replacements ?? defaults.replacements);
     const tableDuration = Number(parsed.tableDurationMinutes ?? defaults.tableDurationMinutes);
-    const hookahWidth = Number(parsed.hookahWidth ?? defaults.hookahWidth);
     const preheatEnabled = typeof parsed.preheatEnabled === 'boolean' ? parsed.preheatEnabled : defaults.preheatEnabled;
     return {
       intervalMinutes: getAllowedInterval(interval),
       replacements: getAllowedReplacement(replacements),
       preheatEnabled,
       tableDurationMinutes: getAllowedTableDuration(tableDuration),
-      hookahWidth: getAllowedHookahWidth(hookahWidth),
-      tableColumns: getAllowedTableColumns(),
     };
   } catch (error) {
     console.warn('Не удалось загрузить настройки, будут использованы значения по умолчанию.', error);
@@ -250,18 +243,6 @@ function getAllowedTableDuration(value) {
   return Math.min(360, Math.max(30, Math.floor(minutes)));
 }
 
-function getAllowedHookahWidth(value) {
-  const width = Number(value);
-  if (!Number.isFinite(width)) {
-    return 120;
-  }
-  return Math.min(240, Math.max(90, Math.floor(width)));
-}
-
-function getAllowedTableColumns() {
-  return TABLE_COLUMNS;
-}
-
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -281,16 +262,7 @@ function applyVisualSettings() {
   if (!root) {
     return;
   }
-  const width = getAllowedHookahWidth(settings.hookahWidth);
-  const columns = getAllowedTableColumns();
-  settings.hookahWidth = width;
-  settings.tableColumns = columns;
-  const height = Math.max(88, Math.min(200, Math.round(width * 0.68)));
-  const gap = Math.max(6, Math.min(16, Math.round(width * 0.08)));
-  root.style.setProperty('--hookah-chip-min-width', `${width}px`);
-  root.style.setProperty('--chip-size', `${height}px`);
-  root.style.setProperty('--chip-gap', `${gap}px`);
-  root.style.setProperty('--table-columns', String(columns));
+  root.style.setProperty('--table-columns', '6');
 }
 
 function applySettingsToState() {
@@ -1098,7 +1070,6 @@ function populateSettingsForm() {
   const replacementsField = settingsForm.querySelector('[name="replacements"]');
   const preheatField = settingsForm.querySelector('[name="preheat"]');
   const tableDurationField = settingsForm.querySelector('[name="tableDuration"]');
-  const hookahWidthField = settingsForm.querySelector('[name="hookahWidth"]');
   if (intervalField) {
     intervalField.value = String(settings.intervalMinutes);
   }
@@ -1111,9 +1082,6 @@ function populateSettingsForm() {
   if (tableDurationField) {
     tableDurationField.value = String(getAllowedTableDuration(settings.tableDurationMinutes));
   }
-  if (hookahWidthField) {
-    hookahWidthField.value = String(getAllowedHookahWidth(settings.hookahWidth));
-  }
 }
 
 function populateTransferForm() {
@@ -1124,13 +1092,25 @@ function populateTransferForm() {
   transferFromSelect.innerHTML = '';
   transferToSelect.innerHTML = '';
 
-  state.tables.forEach((table) => {
-    const optionFrom = document.createElement('option');
-    optionFrom.value = table.id;
-    optionFrom.textContent = table.name;
-    optionFrom.dataset.activeCount = String(getActiveHookahCount(table));
-    transferFromSelect.appendChild(optionFrom);
+  const activeTables = state.tables.filter((table) => getActiveHookahCount(table) > 0);
+  if (!activeTables.length) {
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Нет активных столов';
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    transferFromSelect.appendChild(placeholder);
+  } else {
+    activeTables.forEach((table) => {
+      const optionFrom = document.createElement('option');
+      optionFrom.value = table.id;
+      optionFrom.textContent = table.name;
+      optionFrom.dataset.activeCount = String(getActiveHookahCount(table));
+      transferFromSelect.appendChild(optionFrom);
+    });
+  }
 
+  state.tables.forEach((table) => {
     const optionTo = document.createElement('option');
     optionTo.value = table.id;
     const freeSlots = getFreeHookahSlots(table);
@@ -1139,10 +1119,8 @@ function populateTransferForm() {
     transferToSelect.appendChild(optionTo);
   });
 
-  const activeTables = state.tables.filter((table) => getActiveHookahCount(table) > 0);
-  const defaultFrom = activeTables[0] ?? state.tables[0] ?? null;
-  if (defaultFrom) {
-    transferFromSelect.value = defaultFrom.id;
+  if (activeTables.length) {
+    transferFromSelect.value = activeTables[0].id;
   }
 
   syncTransferDestination();
@@ -1305,14 +1283,11 @@ if (settingsForm) {
     const replacements = getAllowedReplacement(Number(formData.get('replacements')));
     const preheatEnabled = formData.get('preheat') === 'on';
     const tableDuration = getAllowedTableDuration(Number(formData.get('tableDuration')));
-    const hookahWidth = getAllowedHookahWidth(Number(formData.get('hookahWidth')));
     settings = {
       intervalMinutes: interval,
       replacements,
       preheatEnabled,
       tableDurationMinutes: tableDuration,
-      hookahWidth,
-      tableColumns: getAllowedTableColumns(),
     };
     saveSettings();
     applySettingsToState();
