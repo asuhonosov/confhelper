@@ -49,8 +49,8 @@ const transferDialog = document.querySelector('[data-transfer]');
 const transferForm = document.querySelector('[data-transfer-form]');
 const transferOpenButton = document.querySelector('[data-open-transfer]');
 
-let state = loadState();
 let settings = loadSettings();
+let state = loadState();
 let preferences = loadPreferences();
 let notifications = [];
 let hideInactiveTables = Boolean(preferences.hideInactive);
