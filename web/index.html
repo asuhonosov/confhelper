@@ -57,11 +57,16 @@
           </label>
         </div>
         <div class="control-bar__group control-bar__group--actions">
-          <button type="button" class="secondary" data-open-settings>Настройки</button>
           <button type="button" class="secondary" data-open-transfer>Перенести кальяны</button>
-          <button type="button" class="toggle-notifications" data-toggle-notifications aria-expanded="false">
+          <button
+            type="button"
+            class="ghost-button toggle-notifications"
+            data-toggle-notifications
+            aria-expanded="false"
+          >
             Показать уведомления
           </button>
+          <button type="button" class="ghost-button" data-open-settings>Настройки</button>
         </div>
       </div>
       <div class="tables" data-table-list></div>
@@ -159,6 +164,28 @@
             step="5"
             required
           />
+        </label>
+        <label class="field">
+          <span class="field__label">Ширина карточки кальяна (px)</span>
+          <input
+            type="number"
+            name="hookahWidth"
+            class="field__control"
+            min="100"
+            max="260"
+            step="5"
+            required
+          />
+        </label>
+        <label class="field">
+          <span class="field__label">Количество столов в строке</span>
+          <select name="tableColumns" class="field__control" required>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+          </select>
         </label>
         <p class="dialog__hint">
           Настройки применяются ко всем новым кальянам и обновляют таймеры после подтверждения.
