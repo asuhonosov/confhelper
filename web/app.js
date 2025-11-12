@@ -64,6 +64,7 @@ let pendingResetTableId = null;
 
 initializePreferences();
 applySettingsToState();
+applyVisualSettings();
 renderTables();
 renderNotifications();
 updateClock();
@@ -99,6 +100,8 @@ function loadSettings() {
     replacements: 3,
     preheatEnabled: false,
     tableDurationMinutes: DEFAULT_TABLE_DURATION_MINUTES,
+    hookahWidth: 150,
+    tableColumns: 4,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -109,15 +112,19 @@ function loadSettings() {
     if (!parsed || typeof parsed !== 'object') {
       return defaults;
     }
-    const interval = Number(parsed.intervalMinutes);
-    const replacements = Number(parsed.replacements);
-    const tableDuration = Number(parsed.tableDurationMinutes);
-    const preheatEnabled = Boolean(parsed.preheatEnabled);
+    const interval = Number(parsed.intervalMinutes ?? defaults.intervalMinutes);
+    const replacements = Number(parsed.replacements ?? defaults.replacements);
+    const tableDuration = Number(parsed.tableDurationMinutes ?? defaults.tableDurationMinutes);
+    const hookahWidth = Number(parsed.hookahWidth ?? defaults.hookahWidth);
+    const tableColumns = Number(parsed.tableColumns ?? defaults.tableColumns);
+    const preheatEnabled = typeof parsed.preheatEnabled === 'boolean' ? parsed.preheatEnabled : defaults.preheatEnabled;
     return {
       intervalMinutes: getAllowedInterval(interval),
       replacements: getAllowedReplacement(replacements),
       preheatEnabled,
       tableDurationMinutes: getAllowedTableDuration(tableDuration),
+      hookahWidth: getAllowedHookahWidth(hookahWidth),
+      tableColumns: getAllowedTableColumns(tableColumns),
     };
   } catch (error) {
     console.warn('Не удалось загрузить настройки, будут использованы значения по умолчанию.', error);
@@ -238,6 +245,23 @@ function getAllowedTableDuration(value) {
   return Math.min(360, Math.max(30, Math.floor(minutes)));
 }
 
+function getAllowedHookahWidth(value) {
+  const width = Number(value);
+  if (!Number.isFinite(width)) {
+    return 150;
+  }
+  return Math.min(260, Math.max(100, Math.floor(width)));
+}
+
+function getAllowedTableColumns(value) {
+  const allowed = [2, 3, 4, 5, 6];
+  const columns = Number(value);
+  if (!Number.isFinite(columns) || !allowed.includes(columns)) {
+    return 4;
+  }
+  return columns;
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -250,6 +274,23 @@ function savePreferences() {
   preferences.hideInactive = hideInactiveTables;
   preferences.sortByUpcoming = sortByUpcoming;
   localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+}
+
+function applyVisualSettings() {
+  const root = document.documentElement;
+  if (!root) {
+    return;
+  }
+  const width = getAllowedHookahWidth(settings.hookahWidth);
+  const columns = getAllowedTableColumns(settings.tableColumns);
+  settings.hookahWidth = width;
+  settings.tableColumns = columns;
+  const height = Math.max(96, Math.min(220, Math.round(width * 0.75)));
+  const gap = Math.max(8, Math.min(20, Math.round(width * 0.1)));
+  root.style.setProperty('--hookah-chip-min-width', `${width}px`);
+  root.style.setProperty('--chip-size', `${height}px`);
+  root.style.setProperty('--chip-gap', `${gap}px`);
+  root.style.setProperty('--table-columns', String(columns));
 }
 
 function applySettingsToState() {
@@ -573,9 +614,12 @@ function renderHookahProgress(node, hookah, alert, now) {
   const totalMs = getHookahTotalMs(hookah);
   const elapsed = now - (hookah.startedAt || now);
   const ratio = clamp(elapsed / totalMs);
-  const replacementsDone = Math.min(hookah.replacements, Math.floor(elapsed / (hookah.intervalMinutes * 60 * 1000)));
+  const replacementsDone = Math.min(
+    hookah.replacements,
+    Math.floor(elapsed / (hookah.intervalMinutes * 60 * 1000)),
+  );
 
-  meta.textContent = `Замен: ${replacementsDone} / ${hookah.replacements}`;
+  meta.textContent = `Замены ${replacementsDone} / ${hookah.replacements}`;
 
   fill.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
   fill.style.backgroundColor = getProgressColor(alert);
@@ -1045,6 +1089,8 @@ function populateSettingsForm() {
   const replacementsField = settingsForm.querySelector('[name="replacements"]');
   const preheatField = settingsForm.querySelector('[name="preheat"]');
   const tableDurationField = settingsForm.querySelector('[name="tableDuration"]');
+  const hookahWidthField = settingsForm.querySelector('[name="hookahWidth"]');
+  const tableColumnsField = settingsForm.querySelector('[name="tableColumns"]');
   if (intervalField) {
     intervalField.value = String(settings.intervalMinutes);
   }
@@ -1056,6 +1102,12 @@ function populateSettingsForm() {
   }
   if (tableDurationField) {
     tableDurationField.value = String(getAllowedTableDuration(settings.tableDurationMinutes));
+  }
+  if (hookahWidthField) {
+    hookahWidthField.value = String(getAllowedHookahWidth(settings.hookahWidth));
+  }
+  if (tableColumnsField) {
+    tableColumnsField.value = String(getAllowedTableColumns(settings.tableColumns));
   }
 }
 
@@ -1159,14 +1211,19 @@ if (settingsForm) {
     const replacements = getAllowedReplacement(Number(formData.get('replacements')));
     const preheatEnabled = formData.get('preheat') === 'on';
     const tableDuration = getAllowedTableDuration(Number(formData.get('tableDuration')));
+    const hookahWidth = getAllowedHookahWidth(Number(formData.get('hookahWidth')));
+    const tableColumns = getAllowedTableColumns(Number(formData.get('tableColumns')));
     settings = {
       intervalMinutes: interval,
       replacements,
       preheatEnabled,
       tableDurationMinutes: tableDuration,
+      hookahWidth,
+      tableColumns,
     };
     saveSettings();
     applySettingsToState();
+    applyVisualSettings();
     renderTables();
     closeDialog(settingsDialog);
   });
