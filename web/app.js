@@ -24,7 +24,8 @@ const TABLE_NAMES = [
   'Стафф',
 ];
 
-const TABLE_SESSION_MINUTES = 120;
+const DEFAULT_TABLE_DURATION_MINUTES = 120;
+const PREHEAT_MINUTES = 10;
 const HOOKAHS_PER_TABLE = 8;
 const WARNING_THRESHOLD_MS = 3 * 60 * 1000;
 
@@ -48,6 +49,9 @@ const settingsOpenButton = document.querySelector('[data-open-settings]');
 const transferDialog = document.querySelector('[data-transfer]');
 const transferForm = document.querySelector('[data-transfer-form]');
 const transferOpenButton = document.querySelector('[data-open-transfer]');
+const confirmDialog = document.querySelector('[data-confirm]');
+const confirmMessage = document.querySelector('[data-confirm-message]');
+const confirmAccept = document.querySelector('[data-confirm-accept]');
 
 let settings = loadSettings();
 let state = loadState();
@@ -56,6 +60,7 @@ let notifications = [];
 let hideInactiveTables = Boolean(preferences.hideInactive);
 let sortByUpcoming = Boolean(preferences.sortByUpcoming);
 let notificationsExpanded = false;
+let pendingResetTableId = null;
 
 initializePreferences();
 applySettingsToState();
@@ -92,6 +97,8 @@ function loadSettings() {
   const defaults = {
     intervalMinutes: 25,
     replacements: 3,
+    preheatEnabled: false,
+    tableDurationMinutes: DEFAULT_TABLE_DURATION_MINUTES,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -104,9 +111,13 @@ function loadSettings() {
     }
     const interval = Number(parsed.intervalMinutes);
     const replacements = Number(parsed.replacements);
+    const tableDuration = Number(parsed.tableDurationMinutes);
+    const preheatEnabled = Boolean(parsed.preheatEnabled);
     return {
       intervalMinutes: getAllowedInterval(interval),
       replacements: getAllowedReplacement(replacements),
+      preheatEnabled,
+      tableDurationMinutes: getAllowedTableDuration(tableDuration),
     };
   } catch (error) {
     console.warn('Не удалось загрузить настройки, будут использованы значения по умолчанию.', error);
@@ -177,6 +188,8 @@ function createHookah(index) {
     expectedEndTime: null,
     nextReminderTime: null,
     alertNotified: null,
+    preheatStartedAt: null,
+    preheatUntil: null,
   };
 }
 
@@ -187,7 +200,7 @@ function ensureHookahDefaults(raw, index) {
   }
   const hookah = { ...base, ...raw };
   hookah.index = base.index;
-  hookah.status = ['idle', 'active'].includes(hookah.status) ? hookah.status : 'idle';
+  hookah.status = ['idle', 'active', 'preheat'].includes(hookah.status) ? hookah.status : 'idle';
   hookah.startedAt = typeof hookah.startedAt === 'number' ? hookah.startedAt : null;
   hookah.lastServiceAt = typeof hookah.lastServiceAt === 'number' ? hookah.lastServiceAt : null;
   hookah.intervalMinutes = getAllowedInterval(hookah.intervalMinutes);
@@ -195,6 +208,8 @@ function ensureHookahDefaults(raw, index) {
   hookah.expectedEndTime = typeof hookah.expectedEndTime === 'number' ? hookah.expectedEndTime : null;
   hookah.nextReminderTime = typeof hookah.nextReminderTime === 'number' ? hookah.nextReminderTime : null;
   hookah.alertNotified = typeof hookah.alertNotified === 'number' ? hookah.alertNotified : null;
+  hookah.preheatStartedAt = typeof hookah.preheatStartedAt === 'number' ? hookah.preheatStartedAt : null;
+  hookah.preheatUntil = typeof hookah.preheatUntil === 'number' ? hookah.preheatUntil : null;
   return hookah;
 }
 
@@ -215,6 +230,14 @@ function getAllowedReplacement(value) {
   return Math.min(4, Math.max(1, Math.floor(number)));
 }
 
+function getAllowedTableDuration(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes)) {
+    return DEFAULT_TABLE_DURATION_MINUTES;
+  }
+  return Math.min(360, Math.max(30, Math.floor(minutes)));
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -230,32 +253,51 @@ function savePreferences() {
 }
 
 function applySettingsToState() {
+  const now = Date.now();
   state.tables.forEach((table) => {
     table.hookahs.forEach((hookah) => {
+      hookah.intervalMinutes = settings.intervalMinutes;
+      hookah.replacements = settings.replacements;
+
       if (hookah.status === 'idle') {
-        hookah.intervalMinutes = settings.intervalMinutes;
-        hookah.replacements = settings.replacements;
         hookah.expectedEndTime = null;
         hookah.nextReminderTime = null;
         hookah.alertNotified = null;
         hookah.startedAt = null;
         hookah.lastServiceAt = null;
-      } else if (hookah.status === 'active') {
-        hookah.intervalMinutes = settings.intervalMinutes;
-        hookah.replacements = settings.replacements;
-        if (hookah.startedAt) {
-          const totalMs = getHookahTotalMs(hookah);
-          hookah.expectedEndTime = hookah.startedAt + totalMs;
+        hookah.preheatStartedAt = null;
+        hookah.preheatUntil = null;
+        return;
+      }
+
+      if (hookah.status === 'preheat') {
+        hookah.expectedEndTime = null;
+        hookah.nextReminderTime = null;
+        hookah.alertNotified = null;
+        if (!settings.preheatEnabled) {
+          activateHookahSession(table, hookah, now);
+        } else {
+          hookah.preheatStartedAt = hookah.preheatStartedAt ?? now;
+          hookah.preheatUntil = hookah.preheatStartedAt + PREHEAT_MINUTES * 60 * 1000;
         }
-        if (hookah.lastServiceAt) {
-          const intervalMs = hookah.intervalMinutes * 60 * 1000;
-          hookah.nextReminderTime = hookah.lastServiceAt + intervalMs;
-          if (hookah.expectedEndTime && hookah.nextReminderTime > hookah.expectedEndTime) {
-            hookah.nextReminderTime = hookah.expectedEndTime;
-          }
+        return;
+      }
+
+      if (hookah.status === 'active') {
+        if (!hookah.startedAt) {
+          hookah.startedAt = now;
+        }
+        const totalMs = getHookahTotalMs(hookah);
+        hookah.expectedEndTime = hookah.startedAt + totalMs;
+        const intervalMs = hookah.intervalMinutes * 60 * 1000;
+        hookah.lastServiceAt = hookah.lastServiceAt ?? hookah.startedAt;
+        hookah.nextReminderTime = hookah.lastServiceAt + intervalMs;
+        if (hookah.expectedEndTime && hookah.nextReminderTime > hookah.expectedEndTime) {
+          hookah.nextReminderTime = hookah.expectedEndTime;
         }
       }
     });
+    updateTableSession(table);
   });
   saveState();
 }
@@ -282,9 +324,13 @@ function clamp(value, min = 0, max = 1) {
 }
 
 function getVisibleHookahCount(table) {
-  const active = table.hookahs.filter((hookah) => hookah.status === 'active').length;
+  const active = table.hookahs.filter((hookah) => hookah.status === 'active' || hookah.status === 'preheat').length;
   const desired = Math.min(HOOKAHS_PER_TABLE, Math.max(1, active + 1));
   return desired;
+}
+
+function getFreeHookahSlots(table) {
+  return table.hookahs.filter((hookah) => hookah.status === 'idle').length;
 }
 
 function renderTables() {
@@ -305,7 +351,7 @@ function renderTables() {
 
   items.forEach(({ table }) => {
     if (hideInactiveTables && !table.sessionStartedAt && !table.sessionExpired) {
-      const hasActive = table.hookahs.some((hookah) => hookah.status === 'active');
+      const hasActive = table.hookahs.some((hookah) => hookah.status === 'active' || hookah.status === 'preheat');
       if (!hasActive) {
         return;
       }
@@ -351,6 +397,7 @@ function renderTables() {
         const button = hookahNode.querySelector('[data-action="toggle-hookah"]');
         const indexNode = hookahNode.querySelector('[data-index]');
         const timerNode = hookahNode.querySelector('[data-timer]');
+        const removeButton = hookahNode.querySelector('[data-action="remove-hookah"]');
 
         hookahNode.dataset.tableId = table.id;
         hookahNode.dataset.hookahIndex = hookah.index;
@@ -362,17 +409,23 @@ function renderTables() {
         const alert = getHookahAlertLevel(hookah, now);
         hookahNode.dataset.alert = alert;
 
-        if (hookah.status === 'active' && timerNode) {
-          timerNode.textContent = formatStopwatch(now - hookah.startedAt);
-        }
-
-        if (hookah.status !== 'active') {
+        if (hookah.status === 'active') {
+          hookahNode.dataset.state = 'active';
+          if (timerNode) {
+            const startedAt = hookah.startedAt ?? now;
+            timerNode.textContent = formatStopwatch(now - startedAt);
+          }
+        } else if (hookah.status === 'preheat') {
+          hookahNode.dataset.state = 'preheat';
+          if (timerNode) {
+            const remaining = hookah.preheatUntil ? hookah.preheatUntil - now : PREHEAT_MINUTES * 60 * 1000;
+            timerNode.textContent = formatCountdownClock(remaining);
+          }
+        } else {
           hookahNode.dataset.state = 'add';
           if (timerNode) {
             timerNode.textContent = '00:00';
           }
-        } else {
-          hookahNode.dataset.state = 'active';
         }
 
         if (button) {
@@ -380,13 +433,21 @@ function renderTables() {
           button.dataset.hookahIndex = hookah.index;
         }
 
+        if (removeButton) {
+          removeButton.dataset.tableId = table.id;
+          removeButton.dataset.hookahIndex = hookah.index;
+          removeButton.hidden = hookahNode.dataset.state === 'add';
+        }
+
         renderHookahProgress(hookahNode, hookah, alert, now);
 
-        if (alert === 'due') {
-          dueCount += 1;
-          dueOrSoonCount += 1;
-        } else if (alert === 'soon') {
-          dueOrSoonCount += 1;
+        if (hookah.status === 'active') {
+          if (alert === 'due') {
+            dueCount += 1;
+            dueOrSoonCount += 1;
+          } else if (alert === 'soon') {
+            dueOrSoonCount += 1;
+          }
         }
 
         hookahList.appendChild(hookahNode);
@@ -428,6 +489,10 @@ function getTableAlertLevel(table, now) {
   let hasSoon = false;
   let hasActive = false;
   table.hookahs.forEach((hookah) => {
+    if (hookah.status === 'preheat') {
+      hasActive = true;
+      return;
+    }
     if (hookah.status !== 'active') {
       return;
     }
@@ -467,6 +532,9 @@ function getTableSortValue(table, now) {
 }
 
 function getHookahAlertLevel(hookah, now) {
+  if (hookah.status === 'preheat') {
+    return 'preheat';
+  }
   if (hookah.status !== 'active') {
     return 'inactive';
   }
@@ -485,16 +553,18 @@ function getHookahAlertLevel(hookah, now) {
 
 function renderHookahProgress(node, hookah, alert, now) {
   const container = node.querySelector('[data-progress]');
-  const list = node.querySelector('[data-segment-list]');
+  const bar = node.querySelector('[data-progress-bar]');
+  const fill = node.querySelector('[data-progress-fill]');
+  const markers = node.querySelector('[data-progress-markers]');
   const meta = node.querySelector('[data-progress-meta]');
 
-  if (!container || !list || !meta) {
+  if (!container || !bar || !fill || !markers || !meta) {
     return;
   }
 
   if (hookah.status !== 'active') {
     container.hidden = true;
-    list.innerHTML = '';
+    markers.innerHTML = '';
     meta.textContent = '';
     return;
   }
@@ -507,31 +577,75 @@ function renderHookahProgress(node, hookah, alert, now) {
 
   meta.textContent = `Замен: ${replacementsDone} / ${hookah.replacements}`;
 
-  list.innerHTML = '';
-  for (let index = 0; index < segments; index += 1) {
-    const segmentNode = document.createElement('span');
-    segmentNode.className = 'hookah-chip__segment';
-    const fillNode = document.createElement('span');
-    fillNode.className = 'hookah-chip__segment-fill';
-    fillNode.style.backgroundColor = getProgressColor(alert);
+  fill.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+  fill.style.backgroundColor = getProgressColor(alert);
 
-    const start = index / segments;
-    const end = (index + 1) / segments;
-    const portion = clamp((ratio - start) / (end - start));
-
-    if (portion >= 1) {
-      segmentNode.dataset.complete = 'true';
-    } else if (portion > 0) {
-      segmentNode.dataset.partial = 'true';
-      fillNode.style.setProperty('--segment-progress', portion);
-    }
-    fillNode.style.transform = `scaleX(${Math.max(portion, 0)})`;
-
-    segmentNode.appendChild(fillNode);
-    list.appendChild(segmentNode);
+  markers.innerHTML = '';
+  for (let index = 1; index < segments; index += 1) {
+    const marker = document.createElement('span');
+    marker.className = 'hookah-chip__bar-marker';
+    marker.style.left = `${(index / segments) * 100}%`;
+    markers.appendChild(marker);
   }
 
   container.hidden = false;
+}
+
+function getTableDurationMs() {
+  const minutes = getAllowedTableDuration(settings.tableDurationMinutes);
+  return minutes * 60 * 1000;
+}
+
+function updateTableSession(table) {
+  const activeHookahs = table.hookahs.filter((hookah) => hookah.status === 'active' || hookah.status === 'preheat');
+  if (!activeHookahs.length) {
+    table.sessionStartedAt = null;
+    table.sessionEndTime = null;
+    table.sessionExpired = false;
+    return;
+  }
+
+  const now = Date.now();
+  const durationMs = getTableDurationMs();
+  const startTimes = activeHookahs.map((hookah) => {
+    if (hookah.status === 'active') {
+      return hookah.startedAt ?? now;
+    }
+    return hookah.preheatStartedAt ?? now;
+  });
+  const earliestStart = Math.min(...startTimes);
+
+  table.sessionStartedAt = earliestStart;
+
+  const endCandidates = activeHookahs.map((hookah) => {
+    const base = hookah.status === 'active' ? hookah.startedAt ?? now : hookah.preheatStartedAt ?? now;
+    return base + durationMs;
+  });
+
+  table.sessionEndTime = Math.max(...endCandidates);
+}
+
+function activateHookahSession(table, hookah, startTime = Date.now()) {
+  hookah.status = 'active';
+  hookah.preheatStartedAt = null;
+  hookah.preheatUntil = null;
+  hookah.startedAt = startTime;
+  hookah.lastServiceAt = startTime;
+  hookah.intervalMinutes = settings.intervalMinutes;
+  hookah.replacements = settings.replacements;
+  hookah.expectedEndTime = startTime + getHookahTotalMs(hookah);
+  const intervalMs = hookah.intervalMinutes * 60 * 1000;
+  hookah.nextReminderTime = startTime + intervalMs;
+  if (hookah.expectedEndTime && hookah.nextReminderTime > hookah.expectedEndTime) {
+    hookah.nextReminderTime = hookah.expectedEndTime;
+  }
+  hookah.alertNotified = null;
+
+  if (!table.sessionStartedAt || table.sessionExpired) {
+    table.sessionStartedAt = startTime;
+    table.sessionExpired = false;
+  }
+  updateTableSession(table);
 }
 
 function getProgressColor(alert) {
@@ -557,6 +671,13 @@ function formatCountdown(ms) {
   }
   parts.push(`${minutes.toString().padStart(2, '0')}м`);
   return parts.join(' ');
+}
+
+function formatCountdownClock(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function formatStopwatch(ms) {
@@ -594,6 +715,25 @@ function processTimers() {
     }
 
     table.hookahs.forEach((hookah) => {
+      if (hookah.status === 'preheat') {
+        if (!settings.preheatEnabled) {
+          activateHookahSession(table, hookah, now);
+          dirty = true;
+          return;
+        }
+        if (!hookah.preheatUntil) {
+          hookah.preheatStartedAt = hookah.preheatStartedAt ?? now;
+          hookah.preheatUntil = hookah.preheatStartedAt + PREHEAT_MINUTES * 60 * 1000;
+          dirty = true;
+          return;
+        }
+        if (now >= hookah.preheatUntil) {
+          activateHookahSession(table, hookah, hookah.preheatUntil);
+          dirty = true;
+        }
+        return;
+      }
+
       if (hookah.status !== 'active' || !hookah.nextReminderTime) {
         return;
       }
@@ -623,19 +763,25 @@ function startHookah(tableId, hookahIndex) {
     return;
   }
   const now = Date.now();
-  hookah.status = 'active';
-  hookah.startedAt = now;
-  hookah.lastServiceAt = now;
   hookah.intervalMinutes = settings.intervalMinutes;
   hookah.replacements = settings.replacements;
-  hookah.expectedEndTime = now + getHookahTotalMs(hookah);
-  hookah.nextReminderTime = now + hookah.intervalMinutes * 60 * 1000;
-  hookah.alertNotified = null;
 
-  if (!table.sessionStartedAt || table.sessionExpired) {
-    table.sessionStartedAt = now;
-    table.sessionEndTime = now + TABLE_SESSION_MINUTES * 60 * 1000;
-    table.sessionExpired = false;
+  if (settings.preheatEnabled) {
+    hookah.status = 'preheat';
+    hookah.preheatStartedAt = now;
+    hookah.preheatUntil = now + PREHEAT_MINUTES * 60 * 1000;
+    hookah.startedAt = null;
+    hookah.lastServiceAt = null;
+    hookah.expectedEndTime = null;
+    hookah.nextReminderTime = null;
+    hookah.alertNotified = null;
+    if (!table.sessionStartedAt || table.sessionExpired) {
+      table.sessionStartedAt = now;
+      table.sessionExpired = false;
+    }
+    updateTableSession(table);
+  } else {
+    activateHookahSession(table, hookah, now);
   }
 
   saveState();
@@ -677,10 +823,43 @@ function resetTable(tableId) {
     hookah.alertNotified = null;
     hookah.intervalMinutes = settings.intervalMinutes;
     hookah.replacements = settings.replacements;
+    hookah.preheatStartedAt = null;
+    hookah.preheatUntil = null;
   });
   table.sessionStartedAt = null;
   table.sessionEndTime = null;
   table.sessionExpired = false;
+  updateTableSession(table);
+  saveState();
+  renderTables();
+}
+
+function removeHookah(tableId, hookahIndex) {
+  const table = state.tables.find((item) => item.id === tableId);
+  if (!table) {
+    return;
+  }
+  const hookah = table.hookahs[hookahIndex - 1];
+  if (!hookah) {
+    return;
+  }
+
+  hookah.status = 'idle';
+  hookah.startedAt = null;
+  hookah.lastServiceAt = null;
+  hookah.expectedEndTime = null;
+  hookah.nextReminderTime = null;
+  hookah.alertNotified = null;
+  hookah.preheatStartedAt = null;
+  hookah.preheatUntil = null;
+  hookah.intervalMinutes = settings.intervalMinutes;
+  hookah.replacements = settings.replacements;
+
+  if (!table.hookahs.some((item) => item.status === 'active' || item.status === 'preheat')) {
+    table.sessionExpired = false;
+  }
+
+  updateTableSession(table);
   saveState();
   renderTables();
 }
@@ -694,11 +873,11 @@ function transferHookahs(fromId, toId) {
   if (!source || !target) {
     return false;
   }
-  const activeHookahs = source.hookahs.filter((hookah) => hookah.status === 'active');
+  const activeHookahs = source.hookahs.filter((hookah) => hookah.status === 'active' || hookah.status === 'preheat');
   if (!activeHookahs.length) {
     return false;
   }
-  const availableSlots = target.hookahs.filter((hookah) => hookah.status !== 'active');
+  const availableSlots = target.hookahs.filter((hookah) => hookah.status === 'idle');
   if (availableSlots.length < activeHookahs.length) {
     alert('Недостаточно свободных кальянов на выбранном столе.');
     return false;
@@ -709,7 +888,7 @@ function transferHookahs(fromId, toId) {
     if (!destination) {
       return;
     }
-    destination.status = 'active';
+    destination.status = hookah.status;
     destination.startedAt = hookah.startedAt;
     destination.lastServiceAt = hookah.lastServiceAt;
     destination.intervalMinutes = hookah.intervalMinutes;
@@ -717,10 +896,12 @@ function transferHookahs(fromId, toId) {
     destination.expectedEndTime = hookah.expectedEndTime;
     destination.nextReminderTime = hookah.nextReminderTime;
     destination.alertNotified = hookah.alertNotified;
+    destination.preheatStartedAt = hookah.preheatStartedAt;
+    destination.preheatUntil = hookah.preheatUntil;
   });
 
   source.hookahs.forEach((hookah) => {
-    if (hookah.status === 'active') {
+    if (hookah.status === 'active' || hookah.status === 'preheat') {
       hookah.status = 'idle';
       hookah.startedAt = null;
       hookah.lastServiceAt = null;
@@ -729,21 +910,21 @@ function transferHookahs(fromId, toId) {
       hookah.alertNotified = null;
       hookah.intervalMinutes = settings.intervalMinutes;
       hookah.replacements = settings.replacements;
+      hookah.preheatStartedAt = null;
+      hookah.preheatUntil = null;
     }
   });
 
-  if (!target.sessionStartedAt || target.sessionExpired) {
-    const now = Date.now();
-    target.sessionStartedAt = now;
-    target.sessionEndTime = now + TABLE_SESSION_MINUTES * 60 * 1000;
-    target.sessionExpired = false;
-  }
+  target.sessionExpired = false;
+  updateTableSession(target);
 
   source.sessionExpired = false;
-  if (!source.hookahs.some((hookah) => hookah.status === 'active')) {
+  if (!source.hookahs.some((hookah) => hookah.status === 'active' || hookah.status === 'preheat')) {
     source.sessionStartedAt = null;
     source.sessionEndTime = null;
   }
+
+  updateTableSession(source);
 
   saveState();
   renderTables();
@@ -841,6 +1022,9 @@ function closeDialog(node) {
   if (!node) {
     return;
   }
+  if (node === confirmDialog) {
+    pendingResetTableId = null;
+  }
   node.hidden = true;
   node.setAttribute('aria-hidden', 'true');
 }
@@ -859,11 +1043,19 @@ function populateSettingsForm() {
   }
   const intervalField = settingsForm.querySelector('[name="interval"]');
   const replacementsField = settingsForm.querySelector('[name="replacements"]');
+  const preheatField = settingsForm.querySelector('[name="preheat"]');
+  const tableDurationField = settingsForm.querySelector('[name="tableDuration"]');
   if (intervalField) {
     intervalField.value = String(settings.intervalMinutes);
   }
   if (replacementsField) {
     replacementsField.value = String(settings.replacements);
+  }
+  if (preheatField) {
+    preheatField.checked = Boolean(settings.preheatEnabled);
+  }
+  if (tableDurationField) {
+    tableDurationField.value = String(getAllowedTableDuration(settings.tableDurationMinutes));
   }
 }
 
@@ -886,7 +1078,8 @@ function populateTransferForm() {
 
     const optionTo = document.createElement('option');
     optionTo.value = table.id;
-    optionTo.textContent = table.name;
+    const freeSlots = getFreeHookahSlots(table);
+    optionTo.textContent = `${table.name} (свободно ${freeSlots})`;
     toSelect.appendChild(optionTo);
   });
 }
@@ -964,9 +1157,13 @@ if (settingsForm) {
     const formData = new FormData(settingsForm);
     const interval = getAllowedInterval(Number(formData.get('interval')));
     const replacements = getAllowedReplacement(Number(formData.get('replacements')));
+    const preheatEnabled = formData.get('preheat') === 'on';
+    const tableDuration = getAllowedTableDuration(Number(formData.get('tableDuration')));
     settings = {
       intervalMinutes: interval,
       replacements,
+      preheatEnabled,
+      tableDurationMinutes: tableDuration,
     };
     saveSettings();
     applySettingsToState();
@@ -994,6 +1191,16 @@ if (transferForm) {
   });
 }
 
+if (confirmAccept) {
+  confirmAccept.addEventListener('click', () => {
+    if (pendingResetTableId) {
+      const targetId = pendingResetTableId;
+      resetTable(targetId);
+    }
+    closeDialog(confirmDialog);
+  });
+}
+
 function getDialogDismissButtons() {
   return document.querySelectorAll('[data-dialog-dismiss]');
 }
@@ -1006,11 +1213,21 @@ getDialogDismissButtons().forEach((button) => {
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
-    [settingsDialog, transferDialog].forEach((dialog) => closeDialog(dialog));
+    [settingsDialog, transferDialog, confirmDialog].forEach((dialog) => closeDialog(dialog));
   }
 });
 
 tableContainer?.addEventListener('click', (event) => {
+  const removeButton = event.target.closest('[data-action="remove-hookah"]');
+  if (removeButton) {
+    const tableId = removeButton.dataset.tableId;
+    const hookahIndex = Number(removeButton.dataset.hookahIndex);
+    if (tableId && hookahIndex) {
+      removeHookah(tableId, hookahIndex);
+    }
+    return;
+  }
+
   const button = event.target.closest('[data-action="toggle-hookah"]');
   if (button) {
     const tableId = button.dataset.tableId;
@@ -1023,10 +1240,19 @@ tableContainer?.addEventListener('click', (event) => {
     if (!hookah) {
       return;
     }
-    if (hookah.status !== 'active') {
+    if (hookah.status === 'idle') {
       startHookah(tableId, hookahIndex);
-    } else {
+      return;
+    }
+    if (hookah.status === 'preheat') {
+      activateHookahSession(table, hookah, Date.now());
+      saveState();
+      renderTables();
+      return;
+    }
+    if (hookah.status === 'active') {
       acknowledgeHookah(tableId, hookahIndex);
+      return;
     }
   }
 
@@ -1043,9 +1269,11 @@ tableContainer?.addEventListener('click', (event) => {
     if (!table.sessionStartedAt && !table.sessionExpired) {
       return;
     }
-    if (confirm(`Освободить ${table.name}?`)) {
-      resetTable(tableId);
+    pendingResetTableId = tableId;
+    if (confirmMessage) {
+      confirmMessage.textContent = `${table.name}: освободить стол? Активные кальяны будут остановлены.`;
     }
+    openDialog(confirmDialog);
   }
 });
 
