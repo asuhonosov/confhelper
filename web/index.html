@@ -95,6 +95,14 @@
 
   <template id="hookah-chip-template">
     <li class="hookah-chip" data-alert>
+      <button
+        type="button"
+        class="hookah-chip__remove"
+        data-action="remove-hookah"
+        aria-label="Удалить кальян"
+      >
+        ×
+      </button>
       <button type="button" class="hookah-chip__body" data-action="toggle-hookah">
         <span class="hookah-chip__index" data-index></span>
         <span class="hookah-chip__timer" data-timer>00:00</span>
@@ -102,7 +110,10 @@
       </button>
       <div class="hookah-chip__progress" data-progress hidden>
         <div class="hookah-chip__progress-meta" data-progress-meta></div>
-        <div class="hookah-chip__segment-list" data-segment-list></div>
+        <div class="hookah-chip__bar" data-progress-bar>
+          <span class="hookah-chip__bar-fill" data-progress-fill></span>
+          <div class="hookah-chip__bar-markers" data-progress-markers></div>
+        </div>
       </div>
     </li>
   </template>
@@ -132,6 +143,22 @@
             <option value="3">3</option>
             <option value="4">4</option>
           </select>
+        </label>
+        <label class="field field--checkbox">
+          <input type="checkbox" class="field__checkbox" name="preheat" />
+          <span class="field__checkbox-label">Добавлять 10 минут прогрева перед стартом</span>
+        </label>
+        <label class="field">
+          <span class="field__label">Время жизни стола (минуты)</span>
+          <input
+            type="number"
+            name="tableDuration"
+            class="field__control"
+            min="30"
+            max="360"
+            step="5"
+            required
+          />
         </label>
         <p class="dialog__hint">
           Настройки применяются ко всем новым кальянам и обновляют таймеры после подтверждения.
@@ -168,6 +195,23 @@
           <button type="submit" class="primary">Перенести</button>
         </footer>
       </form>
+    </div>
+  </div>
+
+  <div class="dialog" data-confirm hidden aria-hidden="true" role="dialog" aria-labelledby="confirm-title">
+    <div class="dialog__backdrop" data-dialog-dismiss></div>
+    <div class="dialog__panel">
+      <header class="dialog__header">
+        <h2 class="dialog__title" id="confirm-title">Освободить стол</h2>
+        <button type="button" class="icon-button" data-dialog-dismiss aria-label="Закрыть">×</button>
+      </header>
+      <div class="dialog__content">
+        <p class="dialog__message" data-confirm-message></p>
+      </div>
+      <footer class="dialog__footer">
+        <button type="button" class="secondary" data-dialog-dismiss>Отмена</button>
+        <button type="button" class="primary" data-confirm-accept>Освободить</button>
+      </footer>
     </div>
   </div>
 
