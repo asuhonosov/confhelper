@@ -17,12 +17,14 @@ const TABLE_NAMES = [
   'Стол 12',
   'Стол 13',
   'Стол 14',
-  'Бар №1',
-  'Бар №2',
-  'Бар №3',
-  'Бар №4',
+  'Бар 1',
+  'Бар 2',
+  'Бар 3',
+  'Бар 4',
   'Стафф',
 ];
+
+const TABLE_COLUMNS = 6;
 
 const DEFAULT_TABLE_DURATION_MINUTES = 120;
 const PREHEAT_MINUTES = 10;
@@ -49,6 +51,10 @@ const settingsOpenButton = document.querySelector('[data-open-settings]');
 const transferDialog = document.querySelector('[data-transfer]');
 const transferForm = document.querySelector('[data-transfer-form]');
 const transferOpenButton = document.querySelector('[data-open-transfer]');
+const transferFromSelect = transferForm?.querySelector('[data-transfer-from]') ?? null;
+const transferToSelect = transferForm?.querySelector('[data-transfer-to]') ?? null;
+const transferErrorNode = transferForm?.querySelector('[data-transfer-error]') ?? null;
+const transferSubmitButton = transferForm?.querySelector('[data-transfer-submit]') ?? null;
 const confirmDialog = document.querySelector('[data-confirm]');
 const confirmMessage = document.querySelector('[data-confirm-message]');
 const confirmAccept = document.querySelector('[data-confirm-accept]');
@@ -100,8 +106,8 @@ function loadSettings() {
     replacements: 3,
     preheatEnabled: false,
     tableDurationMinutes: DEFAULT_TABLE_DURATION_MINUTES,
-    hookahWidth: 150,
-    tableColumns: 4,
+    hookahWidth: 120,
+    tableColumns: TABLE_COLUMNS,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -116,7 +122,6 @@ function loadSettings() {
     const replacements = Number(parsed.replacements ?? defaults.replacements);
     const tableDuration = Number(parsed.tableDurationMinutes ?? defaults.tableDurationMinutes);
     const hookahWidth = Number(parsed.hookahWidth ?? defaults.hookahWidth);
-    const tableColumns = Number(parsed.tableColumns ?? defaults.tableColumns);
     const preheatEnabled = typeof parsed.preheatEnabled === 'boolean' ? parsed.preheatEnabled : defaults.preheatEnabled;
     return {
       intervalMinutes: getAllowedInterval(interval),
@@ -124,7 +129,7 @@ function loadSettings() {
       preheatEnabled,
       tableDurationMinutes: getAllowedTableDuration(tableDuration),
       hookahWidth: getAllowedHookahWidth(hookahWidth),
-      tableColumns: getAllowedTableColumns(tableColumns),
+      tableColumns: getAllowedTableColumns(),
     };
   } catch (error) {
     console.warn('Не удалось загрузить настройки, будут использованы значения по умолчанию.', error);
@@ -248,18 +253,13 @@ function getAllowedTableDuration(value) {
 function getAllowedHookahWidth(value) {
   const width = Number(value);
   if (!Number.isFinite(width)) {
-    return 150;
+    return 120;
   }
-  return Math.min(260, Math.max(100, Math.floor(width)));
+  return Math.min(240, Math.max(90, Math.floor(width)));
 }
 
-function getAllowedTableColumns(value) {
-  const allowed = [2, 3, 4, 5, 6];
-  const columns = Number(value);
-  if (!Number.isFinite(columns) || !allowed.includes(columns)) {
-    return 4;
-  }
-  return columns;
+function getAllowedTableColumns() {
+  return TABLE_COLUMNS;
 }
 
 function saveState() {
@@ -282,11 +282,11 @@ function applyVisualSettings() {
     return;
   }
   const width = getAllowedHookahWidth(settings.hookahWidth);
-  const columns = getAllowedTableColumns(settings.tableColumns);
+  const columns = getAllowedTableColumns();
   settings.hookahWidth = width;
   settings.tableColumns = columns;
-  const height = Math.max(96, Math.min(220, Math.round(width * 0.75)));
-  const gap = Math.max(8, Math.min(20, Math.round(width * 0.1)));
+  const height = Math.max(88, Math.min(200, Math.round(width * 0.68)));
+  const gap = Math.max(6, Math.min(16, Math.round(width * 0.08)));
   root.style.setProperty('--hookah-chip-min-width', `${width}px`);
   root.style.setProperty('--chip-size', `${height}px`);
   root.style.setProperty('--chip-gap', `${gap}px`);
@@ -372,6 +372,10 @@ function getVisibleHookahCount(table) {
 
 function getFreeHookahSlots(table) {
   return table.hookahs.filter((hookah) => hookah.status === 'idle').length;
+}
+
+function getActiveHookahCount(table) {
+  return table.hookahs.filter((hookah) => hookah.status === 'active' || hookah.status === 'preheat').length;
 }
 
 function renderTables() {
@@ -909,22 +913,24 @@ function removeHookah(tableId, hookahIndex) {
 }
 
 function transferHookahs(fromId, toId) {
-  if (!fromId || !toId || fromId === toId) {
-    return false;
+  if (!fromId || !toId) {
+    return { success: false, reason: 'Укажите столы для переноса.' };
+  }
+  if (fromId === toId) {
+    return { success: false, reason: 'Выберите другой стол для переноса.' };
   }
   const source = state.tables.find((item) => item.id === fromId);
   const target = state.tables.find((item) => item.id === toId);
   if (!source || !target) {
-    return false;
+    return { success: false, reason: 'Не удалось определить выбранные столы.' };
   }
   const activeHookahs = source.hookahs.filter((hookah) => hookah.status === 'active' || hookah.status === 'preheat');
   if (!activeHookahs.length) {
-    return false;
+    return { success: false, reason: 'На исходном столе нет активных кальянов для переноса.' };
   }
   const availableSlots = target.hookahs.filter((hookah) => hookah.status === 'idle');
   if (availableSlots.length < activeHookahs.length) {
-    alert('Недостаточно свободных кальянов на выбранном столе.');
-    return false;
+    return { success: false, reason: 'Недостаточно свободных кальянов на целевом столе.' };
   }
 
   activeHookahs.forEach((hookah) => {
@@ -972,7 +978,7 @@ function transferHookahs(fromId, toId) {
 
   saveState();
   renderTables();
-  return true;
+  return { success: true };
 }
 
 function showNotification(message, type = 'info') {
@@ -1069,6 +1075,9 @@ function closeDialog(node) {
   if (node === confirmDialog) {
     pendingResetTableId = null;
   }
+  if (node === transferDialog) {
+    clearTransferError();
+  }
   node.hidden = true;
   node.setAttribute('aria-hidden', 'true');
 }
@@ -1090,7 +1099,6 @@ function populateSettingsForm() {
   const preheatField = settingsForm.querySelector('[name="preheat"]');
   const tableDurationField = settingsForm.querySelector('[name="tableDuration"]');
   const hookahWidthField = settingsForm.querySelector('[name="hookahWidth"]');
-  const tableColumnsField = settingsForm.querySelector('[name="tableColumns"]');
   if (intervalField) {
     intervalField.value = String(settings.intervalMinutes);
   }
@@ -1106,34 +1114,120 @@ function populateSettingsForm() {
   if (hookahWidthField) {
     hookahWidthField.value = String(getAllowedHookahWidth(settings.hookahWidth));
   }
-  if (tableColumnsField) {
-    tableColumnsField.value = String(getAllowedTableColumns(settings.tableColumns));
-  }
 }
 
 function populateTransferForm() {
-  if (!transferForm) {
+  if (!transferForm || !transferFromSelect || !transferToSelect) {
     return;
   }
-  const fromSelect = transferForm.querySelector('[name="from"]');
-  const toSelect = transferForm.querySelector('[name="to"]');
-  if (!fromSelect || !toSelect) {
-    return;
-  }
-  fromSelect.innerHTML = '';
-  toSelect.innerHTML = '';
+
+  transferFromSelect.innerHTML = '';
+  transferToSelect.innerHTML = '';
+
   state.tables.forEach((table) => {
     const optionFrom = document.createElement('option');
     optionFrom.value = table.id;
     optionFrom.textContent = table.name;
-    fromSelect.appendChild(optionFrom);
+    optionFrom.dataset.activeCount = String(getActiveHookahCount(table));
+    transferFromSelect.appendChild(optionFrom);
 
     const optionTo = document.createElement('option');
     optionTo.value = table.id;
     const freeSlots = getFreeHookahSlots(table);
     optionTo.textContent = `${table.name} (свободно ${freeSlots})`;
-    toSelect.appendChild(optionTo);
+    optionTo.dataset.freeSlots = String(freeSlots);
+    transferToSelect.appendChild(optionTo);
   });
+
+  const activeTables = state.tables.filter((table) => getActiveHookahCount(table) > 0);
+  const defaultFrom = activeTables[0] ?? state.tables[0] ?? null;
+  if (defaultFrom) {
+    transferFromSelect.value = defaultFrom.id;
+  }
+
+  syncTransferDestination();
+  clearTransferError();
+  updateTransferSubmitState();
+}
+
+function clearTransferError() {
+  if (!transferErrorNode) {
+    return;
+  }
+  transferErrorNode.textContent = '';
+  transferErrorNode.hidden = true;
+}
+
+function showTransferError(message) {
+  if (!transferErrorNode) {
+    return;
+  }
+  transferErrorNode.textContent = message;
+  transferErrorNode.hidden = false;
+}
+
+function syncTransferDestination() {
+  if (!transferFromSelect || !transferToSelect) {
+    return;
+  }
+  const fromId = transferFromSelect.value;
+  const fromTable = state.tables.find((item) => item.id === fromId) ?? null;
+  const activeCount = fromTable ? getActiveHookahCount(fromTable) : 0;
+  const options = Array.from(transferToSelect.options).filter((option) => option.value !== fromId);
+  const preferred =
+    options.find((option) => Number(option.dataset.freeSlots ?? '0') >= activeCount) ??
+    options[0] ??
+    null;
+  if (preferred) {
+    transferToSelect.value = preferred.value;
+  }
+}
+
+function updateTransferSubmitState() {
+  if (!transferSubmitButton) {
+    return;
+  }
+  if (!transferFromSelect || !transferToSelect) {
+    transferSubmitButton.disabled = true;
+    clearTransferError();
+    return;
+  }
+
+  const fromId = transferFromSelect.value;
+  const toId = transferToSelect.value;
+  const fromTable = state.tables.find((item) => item.id === fromId) ?? null;
+  const toTable = state.tables.find((item) => item.id === toId) ?? null;
+  let message = '';
+  let disabled = false;
+
+  if (!fromTable) {
+    disabled = true;
+    message = 'Выберите стол, с которого переносить кальяны.';
+  } else if (getActiveHookahCount(fromTable) === 0) {
+    disabled = true;
+    message = 'На выбранном столе нет активных кальянов.';
+  } else if (!toTable) {
+    disabled = true;
+    message = 'Укажите стол назначения.';
+  } else if (fromId === toId) {
+    disabled = true;
+    message = 'Выберите другой стол для переноса.';
+  } else {
+    const available = getFreeHookahSlots(toTable);
+    const required = getActiveHookahCount(fromTable);
+    if (available < required) {
+      disabled = true;
+      message = `Свободных слотов: ${available}. Нужно: ${required}.`;
+    }
+  }
+
+  transferSubmitButton.disabled = disabled;
+
+  if (disabled && message) {
+    showTransferError(message);
+  } else {
+    clearTransferError();
+  }
 }
 
 function handleBulkAction(includeYellow = false) {
@@ -1212,14 +1306,13 @@ if (settingsForm) {
     const preheatEnabled = formData.get('preheat') === 'on';
     const tableDuration = getAllowedTableDuration(Number(formData.get('tableDuration')));
     const hookahWidth = getAllowedHookahWidth(Number(formData.get('hookahWidth')));
-    const tableColumns = getAllowedTableColumns(Number(formData.get('tableColumns')));
     settings = {
       intervalMinutes: interval,
       replacements,
       preheatEnabled,
       tableDurationMinutes: tableDuration,
       hookahWidth,
-      tableColumns,
+      tableColumns: getAllowedTableColumns(),
     };
     saveSettings();
     applySettingsToState();
@@ -1236,15 +1329,35 @@ if (transferOpenButton) {
   });
 }
 
+if (transferFromSelect) {
+  transferFromSelect.addEventListener('change', () => {
+    clearTransferError();
+    syncTransferDestination();
+    updateTransferSubmitState();
+  });
+}
+
+if (transferToSelect) {
+  transferToSelect.addEventListener('change', () => {
+    clearTransferError();
+    updateTransferSubmitState();
+  });
+}
+
 if (transferForm) {
   transferForm.addEventListener('submit', (event) => {
     event.preventDefault();
     const formData = new FormData(transferForm);
     const fromId = formData.get('from');
     const toId = formData.get('to');
-    if (transferHookahs(fromId, toId)) {
+    const result = transferHookahs(fromId, toId);
+    if (result.success) {
+      clearTransferError();
       closeDialog(transferDialog);
+    } else if (result.reason) {
+      showTransferError(result.reason);
     }
+    updateTransferSubmitState();
   });
 }
 
