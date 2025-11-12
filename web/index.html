@@ -18,7 +18,7 @@
         <div class="page-header__info">
           <h1>HookahPlace Red Rose — Поток</h1>
           <p class="page-header__subtitle">
-            Контролируйте 14 столов, четыре бара и стафф-зону с до восьми кальянами на каждом, отслеживайте смену углей и время сеансов в едином рабочем окне.
+            Контролируйте столы, бары и стафф-зону, следите за заменами углей и временем сеанса в одном окне.
           </p>
         </div>
       </div>
@@ -56,9 +56,13 @@
             <span class="toggle-filter__label">Отсортировать по ближайшим заменам</span>
           </label>
         </div>
-        <button type="button" class="toggle-notifications" data-toggle-notifications aria-expanded="false">
-          Показать уведомления
-        </button>
+        <div class="control-bar__group control-bar__group--actions">
+          <button type="button" class="secondary" data-open-settings>Настройки</button>
+          <button type="button" class="secondary" data-open-transfer>Перенести кальяны</button>
+          <button type="button" class="toggle-notifications" data-toggle-notifications aria-expanded="false">
+            Показать уведомления
+          </button>
+        </div>
       </div>
       <div class="tables" data-table-list></div>
     </section>
@@ -74,80 +78,98 @@
   </main>
 
   <template id="table-card-template">
-    <article
-      class="table-card"
-      data-table-id
-      data-action="open-table"
-      role="button"
-      tabindex="0"
-    >
+    <article class="table-card" data-table-id>
       <header class="table-card__header">
-        <span class="table-card__name" data-name></span>
-        <span class="table-card__summary" data-summary></span>
+        <div class="table-card__title">
+          <span class="table-card__name" data-name></span>
+          <span class="table-card__summary" data-summary></span>
+        </div>
+        <div class="table-card__actions">
+          <button type="button" class="table-card__close" data-action="close-table">Закрыть</button>
+        </div>
       </header>
       <ul class="table-card__hookahs" data-hookah-list></ul>
-      <div class="table-card__footer" data-table-alert></div>
+      <footer class="table-card__footer" data-table-alert></footer>
     </article>
   </template>
 
   <template id="hookah-chip-template">
     <li class="hookah-chip" data-alert>
-      <span class="hookah-chip__index" data-index></span>
-      <span class="hookah-chip__timer" data-timer></span>
-      <div class="hookah-chip__progress" data-progress>
+      <button type="button" class="hookah-chip__body" data-action="toggle-hookah">
+        <span class="hookah-chip__index" data-index></span>
+        <span class="hookah-chip__timer" data-timer>00:00</span>
+        <span class="hookah-chip__plus" aria-hidden="true">+</span>
+      </button>
+      <div class="hookah-chip__progress" data-progress hidden>
+        <div class="hookah-chip__progress-meta" data-progress-meta></div>
         <div class="hookah-chip__segment-list" data-segment-list></div>
       </div>
     </li>
   </template>
 
-  <div class="modal" data-modal hidden aria-hidden="true">
-    <div class="modal__backdrop" data-modal-close></div>
-    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="table-modal-title">
-      <header class="modal__header">
-        <div>
-          <p class="modal__eyebrow">Управление столом</p>
-          <h2 class="modal__title" id="table-modal-title" data-modal-name></h2>
-          <p class="modal__note">Настройте прогрев, частоту и число замен для каждого кальяна.</p>
-        </div>
-        <button type="button" class="icon-button" data-modal-close aria-label="Закрыть окно">×</button>
+  <div class="dialog" data-settings hidden aria-hidden="true" role="dialog" aria-labelledby="settings-title">
+    <div class="dialog__backdrop" data-dialog-dismiss></div>
+    <div class="dialog__panel">
+      <header class="dialog__header">
+        <h2 class="dialog__title" id="settings-title">Общие настройки</h2>
+        <button type="button" class="icon-button" data-dialog-dismiss aria-label="Закрыть">×</button>
       </header>
-      <div class="modal__content">
-        <div class="modal__hookah-list" data-modal-hookah-list></div>
-      </div>
-      <footer class="modal__footer">
-        <div class="modal__transfer">
-          <p class="modal__transfer-note">Перенести активные кальяны</p>
-          <button type="button" class="secondary" data-action="open-transfer">
-            Выбрать стол для переноса
-          </button>
-        </div>
-        <div class="modal__footer-actions">
-          <button type="button" class="ghost" data-role="free"></button>
-          <div class="modal__footer-buttons">
-            <button type="button" class="ghost" data-action="remove-hookah"></button>
-            <button type="button" class="primary" data-action="add-hookah"></button>
-          </div>
-        </div>
-      </footer>
-    </div>
-    <div class="modal-transfer" data-transfer-panel hidden aria-hidden="true">
-      <div class="modal-transfer__dialog" role="dialog" aria-modal="false">
-        <header class="modal-transfer__header">
-          <h3>Выбор стола для переноса</h3>
-          <button type="button" class="icon-button" data-transfer-close aria-label="Закрыть перенос">×</button>
-        </header>
-        <p class="modal-transfer__description">
-          Выберите стол с достаточным количеством свободных кальянов и подтвердите перенос.
+      <form class="dialog__content" data-settings-form>
+        <label class="field">
+          <span class="field__label">Частота смены углей (минуты)</span>
+          <select name="interval" class="field__control" required>
+            <option value="1">1</option>
+            <option value="25">25</option>
+            <option value="35">35</option>
+            <option value="45">45</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Количество замен углей</span>
+          <select name="replacements" class="field__control" required>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </label>
+        <p class="dialog__hint">
+          Настройки применяются ко всем новым кальянам и обновляют таймеры после подтверждения.
         </p>
-        <div class="modal-transfer__list" data-transfer-list></div>
-        <footer class="modal-transfer__footer">
-          <button type="button" class="secondary" data-transfer-confirm disabled>Подтвердить перенос</button>
+        <footer class="dialog__footer">
+          <button type="button" class="secondary" data-dialog-dismiss>Отмена</button>
+          <button type="submit" class="primary">Сохранить</button>
         </footer>
-      </div>
+      </form>
     </div>
   </div>
 
-
+  <div class="dialog" data-transfer hidden aria-hidden="true" role="dialog" aria-labelledby="transfer-title">
+    <div class="dialog__backdrop" data-dialog-dismiss></div>
+    <div class="dialog__panel dialog__panel--wide">
+      <header class="dialog__header">
+        <h2 class="dialog__title" id="transfer-title">Перенос кальянов</h2>
+        <button type="button" class="icon-button" data-dialog-dismiss aria-label="Закрыть">×</button>
+      </header>
+      <form class="dialog__content" data-transfer-form>
+        <label class="field">
+          <span class="field__label">Откуда перенести</span>
+          <select name="from" class="field__control" required></select>
+        </label>
+        <label class="field">
+          <span class="field__label">Куда перенести</span>
+          <select name="to" class="field__control" required></select>
+        </label>
+        <p class="dialog__hint">
+          Все активные кальяны выбранного стола будут перенесены в свободные слоты целевого стола.
+        </p>
+        <footer class="dialog__footer">
+          <button type="button" class="secondary" data-dialog-dismiss>Отмена</button>
+          <button type="submit" class="primary">Перенести</button>
+        </footer>
+      </form>
+    </div>
+  </div>
 
   <script type="module" src="app.js"></script>
 </body>
