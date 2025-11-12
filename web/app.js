@@ -1084,15 +1084,62 @@ function populateSettingsForm() {
   }
 }
 
+
+function buildTransferDestinationOptions(excludeId, preferredValue) {
+  if (!transferToSelect) {
+    return;
+  }
+
+  transferToSelect.innerHTML = '';
+
+  const destinations = state.tables.filter((table) => table.id !== excludeId);
+  if (!destinations.length) {
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Нет доступных столов';
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    transferToSelect.appendChild(placeholder);
+    return;
+  }
+
+  const fromTable = state.tables.find((item) => item.id === excludeId) ?? null;
+  const activeCount = fromTable ? getActiveHookahCount(fromTable) : 0;
+  let fallbackOption = null;
+  let capacityOption = null;
+
+  destinations.forEach((table) => {
+    const option = document.createElement('option');
+    option.value = table.id;
+    const freeSlots = getFreeHookahSlots(table);
+    option.textContent = `${table.name} (свободно ${freeSlots})`;
+    option.dataset.freeSlots = String(freeSlots);
+    transferToSelect.appendChild(option);
+
+    if (preferredValue && table.id === preferredValue) {
+      fallbackOption = option;
+    }
+    if (!capacityOption && freeSlots >= activeCount) {
+      capacityOption = option;
+    }
+  });
+
+  const target = fallbackOption ?? capacityOption ?? transferToSelect.options[0] ?? null;
+  if (target) {
+    transferToSelect.value = target.value;
+  }
+}
+
 function populateTransferForm() {
-  if (!transferForm || !transferFromSelect || !transferToSelect) {
+  if (!transferForm || !transferFromSelect) {
     return;
   }
 
   transferFromSelect.innerHTML = '';
-  transferToSelect.innerHTML = '';
 
   const activeTables = state.tables.filter((table) => getActiveHookahCount(table) > 0);
+  let initialFrom = '';
+
   if (!activeTables.length) {
     const placeholder = document.createElement('option');
     placeholder.value = '';
@@ -1108,22 +1155,12 @@ function populateTransferForm() {
       optionFrom.dataset.activeCount = String(getActiveHookahCount(table));
       transferFromSelect.appendChild(optionFrom);
     });
+    initialFrom = activeTables[0].id;
+    transferFromSelect.value = initialFrom;
   }
 
-  state.tables.forEach((table) => {
-    const optionTo = document.createElement('option');
-    optionTo.value = table.id;
-    const freeSlots = getFreeHookahSlots(table);
-    optionTo.textContent = `${table.name} (свободно ${freeSlots})`;
-    optionTo.dataset.freeSlots = String(freeSlots);
-    transferToSelect.appendChild(optionTo);
-  });
-
-  if (activeTables.length) {
-    transferFromSelect.value = activeTables[0].id;
-  }
-
-  syncTransferDestination();
+  const preferredDestination = transferToSelect?.value ?? '';
+  buildTransferDestinationOptions(initialFrom, preferredDestination);
   clearTransferError();
   updateTransferSubmitState();
 }
@@ -1145,20 +1182,12 @@ function showTransferError(message) {
 }
 
 function syncTransferDestination() {
-  if (!transferFromSelect || !transferToSelect) {
+  if (!transferFromSelect) {
     return;
   }
   const fromId = transferFromSelect.value;
-  const fromTable = state.tables.find((item) => item.id === fromId) ?? null;
-  const activeCount = fromTable ? getActiveHookahCount(fromTable) : 0;
-  const options = Array.from(transferToSelect.options).filter((option) => option.value !== fromId);
-  const preferred =
-    options.find((option) => Number(option.dataset.freeSlots ?? '0') >= activeCount) ??
-    options[0] ??
-    null;
-  if (preferred) {
-    transferToSelect.value = preferred.value;
-  }
+  const previousValue = transferToSelect?.value ?? '';
+  buildTransferDestinationOptions(fromId, previousValue);
 }
 
 function updateTransferSubmitState() {
@@ -1178,24 +1207,27 @@ function updateTransferSubmitState() {
   let message = '';
   let disabled = false;
 
-  if (!fromTable) {
+  if (!fromId) {
+    message = 'Выберите стол с активными кальянами';
     disabled = true;
-    message = 'Выберите стол, с которого переносить кальяны.';
-  } else if (getActiveHookahCount(fromTable) === 0) {
+  } else if (!toId || !transferToSelect.options.length) {
+    message = 'Нет доступного стола для переноса';
     disabled = true;
-    message = 'На выбранном столе нет активных кальянов.';
-  } else if (!toTable) {
+  } else if (!fromTable || !toTable) {
+    message = 'Выберите доступные столы';
     disabled = true;
-    message = 'Укажите стол назначения.';
   } else if (fromId === toId) {
+    message = 'Выберите разные столы';
     disabled = true;
-    message = 'Выберите другой стол для переноса.';
   } else {
-    const available = getFreeHookahSlots(toTable);
-    const required = getActiveHookahCount(fromTable);
-    if (available < required) {
+    const activeCount = getActiveHookahCount(fromTable);
+    const freeSlots = getFreeHookahSlots(toTable);
+    if (activeCount === 0) {
+      message = 'Нет активных кальянов для переноса';
       disabled = true;
-      message = `Свободных слотов: ${available}. Нужно: ${required}.`;
+    } else if (freeSlots < activeCount) {
+      message = `Свободных мест: ${freeSlots}. Нужен стол с большей вместимостью`;
+      disabled = true;
     }
   }
 
