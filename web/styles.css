@@ -14,7 +14,7 @@
   --warning: #ffc857;
   --danger: #ff5468;
   --inactive: #3c4258;
-  --chip-size: 94px;
+  --chip-size: 72px;
   --chip-gap: 12px;
   --shadow: 0 12px 32px rgba(7, 10, 20, 0.45);
   --progress-track: rgba(255, 255, 255, 0.1);
@@ -277,7 +277,7 @@ a {
 .table-card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   padding: 18px 20px;
   background: var(--surface);
   border-radius: 20px;
@@ -335,6 +335,7 @@ a {
   min-height: 18px;
 }
 
+
 .hookah-chip {
   background: var(--surface-alt);
   border-radius: 18px;
@@ -342,14 +343,15 @@ a {
   padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   min-height: var(--chip-size);
+  position: relative;
 }
 
 .hookah-chip__body {
   width: 100%;
-  height: calc(var(--chip-size) - 32px);
-  min-height: 96px;
+  height: calc(var(--chip-size) - 12px);
+  min-height: 72px;
   border: none;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
@@ -358,7 +360,7 @@ a {
   grid-template-columns: auto 1fr auto;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 8px 12px;
   font-size: 20px;
   cursor: pointer;
   position: relative;
@@ -372,6 +374,11 @@ a {
 
 .hookah-chip[data-alert="inactive"] .hookah-chip__body {
   background: rgba(255, 255, 255, 0.04);
+}
+
+.hookah-chip[data-alert="preheat"] .hookah-chip__body {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
 }
 
 .hookah-chip[data-alert="ok"] .hookah-chip__body {
@@ -402,7 +409,7 @@ a {
 
 .hookah-chip__timer {
   font-variant-numeric: tabular-nums;
-  font-size: 28px;
+  font-size: 30px;
   justify-self: center;
 }
 
@@ -422,7 +429,7 @@ a {
 .hookah-chip__progress {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .hookah-chip__progress-meta {
@@ -431,42 +438,37 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-.hookah-chip__segment-list {
-  display: grid;
-  gap: 4px;
-}
-
-.hookah-chip__segment {
+.hookah-chip__bar {
   position: relative;
-  height: 8px;
+  height: 9px;
   border-radius: 6px;
   background: var(--progress-track);
   overflow: hidden;
 }
 
-.hookah-chip__segment::after {
-  content: "";
+.hookah-chip__bar-fill {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), transparent);
-}
-
-.hookah-chip__segment-fill {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
+  width: 0;
   background: var(--accent);
-  transform-origin: left center;
-  transform: scaleX(0);
-  transition: transform 0.3s ease;
+  border-radius: inherit;
+  transition: width 0.3s ease;
+  z-index: 1;
 }
 
-.hookah-chip__segment[data-complete] .hookah-chip__segment-fill {
-  transform: scaleX(1);
+.hookah-chip__bar-markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
 }
 
-.hookah-chip__segment[data-partial] .hookah-chip__segment-fill {
-  transform: scaleX(var(--segment-progress, 0));
+.hookah-chip__bar-marker {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .notifications {
@@ -689,4 +691,91 @@ a {
   .hookah-chip__timer {
     font-size: 22px;
   }
+}
+.hookah-chip__remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.hookah-chip__remove:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.hookah-chip[data-state="add"] .hookah-chip__remove {
+  display: none;
+}
+
+.hookah-chip[data-state="preheat"] .hookah-chip__timer {
+  color: var(--text-muted);
+}
+
+.hookah-chip[data-state="add"] .hookah-chip__progress {
+  display: none;
+}
+
+.hookah-chip[data-state="preheat"] .hookah-chip__progress {
+  display: none;
+}
+
+.field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.field__checkbox {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  accent-color: var(--accent);
+}
+
+.field__checkbox-label {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.dialog__message {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.hookah-chip[data-alert="due"] .hookah-chip__bar-fill {
+  background: var(--danger);
+}
+
+.hookah-chip[data-alert="soon"] .hookah-chip__bar-fill {
+  background: var(--warning);
+}
+
+.hookah-chip[data-alert="ok"] .hookah-chip__bar-fill {
+  background: var(--success);
+}
+
+.hookah-chip[data-alert="inactive"] .hookah-chip__bar-fill,
+.hookah-chip[data-alert="preheat"] .hookah-chip__bar-fill {
+  background: var(--progress-track);
+}
+
+.hookah-chip__bar-marker::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
 }
