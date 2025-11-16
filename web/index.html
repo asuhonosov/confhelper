@@ -199,13 +199,17 @@
           <span class="field__label">Откуда перенести</span>
           <select name="from" class="field__control" required data-transfer-from></select>
         </label>
+        <div class="field">
+          <span class="field__label">Какие кальяны перенести</span>
+          <div class="transfer-hookah-list" data-transfer-hookah-list></div>
+        </div>
         <label class="field">
           <span class="field__label">Куда перенести</span>
           <select name="to" class="field__control" required data-transfer-to></select>
         </label>
         <p class="dialog__error" data-transfer-error hidden></p>
         <p class="dialog__hint">
-          Все активные кальяны выбранного стола будут перенесены в свободные слоты целевого стола.
+          Отметьте один или несколько активных кальянов — они сохранят таймеры и переедут в выбранный стол.
         </p>
         <footer class="dialog__footer">
           <button type="button" class="secondary" data-dialog-dismiss>Отмена</button>
