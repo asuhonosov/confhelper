@@ -56,6 +56,11 @@ const transferSubmitButton = transferForm?.querySelector('[data-transfer-submit]
 const confirmDialog = document.querySelector('[data-confirm]');
 const confirmMessage = document.querySelector('[data-confirm-message]');
 const confirmAccept = document.querySelector('[data-confirm-accept]');
+const headerToggleButton = document.querySelector('[data-header-toggle]');
+const headerCollapseMedia = window.matchMedia ? window.matchMedia('(max-width: 1100px)') : null;
+const controlPanel = document.querySelector('[data-control-panel]');
+const controlPanelToggle = document.querySelector('[data-control-panel-toggle]');
+const controlCollapseMedia = window.matchMedia ? window.matchMedia('(max-width: 1180px)') : null;
 
 let settings = loadSettings();
 let state = loadState();
@@ -65,6 +70,8 @@ let hideInactiveTables = Boolean(preferences.hideInactive);
 let sortByUpcoming = Boolean(preferences.sortByUpcoming);
 let notificationsExpanded = false;
 let pendingResetTableId = null;
+let headerCollapsed = headerCollapseMedia ? headerCollapseMedia.matches : false;
+let controlsCollapsed = controlCollapseMedia ? controlCollapseMedia.matches : false;
 
 initializePreferences();
 applySettingsToState();
@@ -72,6 +79,8 @@ applyVisualSettings();
 renderTables();
 renderNotifications();
 updateClock();
+applyHeaderCollapseState();
+applyControlPanelState();
 
 setInterval(() => {
   processTimers();
@@ -158,6 +167,7 @@ function createTable(index) {
     sessionStartedAt: null,
     sessionEndTime: null,
     sessionExpired: false,
+    sessionExpiredAt: null,
   };
 }
 
@@ -179,6 +189,7 @@ function ensureTableDefaults(raw, index) {
   table.sessionStartedAt = typeof table.sessionStartedAt === 'number' ? table.sessionStartedAt : null;
   table.sessionEndTime = typeof table.sessionEndTime === 'number' ? table.sessionEndTime : null;
   table.sessionExpired = Boolean(table.sessionExpired);
+  table.sessionExpiredAt = typeof table.sessionExpiredAt === 'number' ? table.sessionExpiredAt : null;
   return table;
 }
 
@@ -195,6 +206,8 @@ function createHookah(index) {
     alertNotified: null,
     preheatStartedAt: null,
     preheatUntil: null,
+    orderStartedAt: null,
+    overtimeStartedAt: null,
   };
 }
 
@@ -205,7 +218,9 @@ function ensureHookahDefaults(raw, index) {
   }
   const hookah = { ...base, ...raw };
   hookah.index = base.index;
-  hookah.status = ['idle', 'active', 'preheat'].includes(hookah.status) ? hookah.status : 'idle';
+  hookah.status = ['idle', 'ordered', 'active', 'preheat'].includes(hookah.status)
+    ? hookah.status
+    : 'idle';
   hookah.startedAt = typeof hookah.startedAt === 'number' ? hookah.startedAt : null;
   hookah.lastServiceAt = typeof hookah.lastServiceAt === 'number' ? hookah.lastServiceAt : null;
   hookah.intervalMinutes = getAllowedInterval(hookah.intervalMinutes);
@@ -215,6 +230,8 @@ function ensureHookahDefaults(raw, index) {
   hookah.alertNotified = typeof hookah.alertNotified === 'number' ? hookah.alertNotified : null;
   hookah.preheatStartedAt = typeof hookah.preheatStartedAt === 'number' ? hookah.preheatStartedAt : null;
   hookah.preheatUntil = typeof hookah.preheatUntil === 'number' ? hookah.preheatUntil : null;
+  hookah.orderStartedAt = typeof hookah.orderStartedAt === 'number' ? hookah.orderStartedAt : null;
+  hookah.overtimeStartedAt = typeof hookah.overtimeStartedAt === 'number' ? hookah.overtimeStartedAt : null;
   return hookah;
 }
 
@@ -262,7 +279,7 @@ function applyVisualSettings() {
   if (!root) {
     return;
   }
-  root.style.setProperty('--table-columns', '6');
+  root.style.removeProperty('--table-columns');
 }
 
 function applySettingsToState() {
@@ -271,6 +288,9 @@ function applySettingsToState() {
     table.hookahs.forEach((hookah) => {
       hookah.intervalMinutes = settings.intervalMinutes;
       hookah.replacements = settings.replacements;
+      if (!Number.isFinite(hookah.replacements) || hookah.replacements < 1) {
+        hookah.replacements = 1;
+      }
 
       if (hookah.status === 'idle') {
         hookah.expectedEndTime = null;
@@ -280,6 +300,8 @@ function applySettingsToState() {
         hookah.lastServiceAt = null;
         hookah.preheatStartedAt = null;
         hookah.preheatUntil = null;
+        hookah.orderStartedAt = null;
+        hookah.overtimeStartedAt = null;
         return;
       }
 
@@ -296,6 +318,13 @@ function applySettingsToState() {
         return;
       }
 
+      if (hookah.status === 'overtime') {
+        hookah.expectedEndTime = hookah.expectedEndTime ?? hookah.startedAt + getHookahTotalMs(hookah);
+        hookah.nextReminderTime = null;
+        hookah.alertNotified = null;
+        return;
+      }
+
       if (hookah.status === 'active') {
         if (!hookah.startedAt) {
           hookah.startedAt = now;
@@ -307,6 +336,9 @@ function applySettingsToState() {
         hookah.nextReminderTime = hookah.lastServiceAt + intervalMs;
         if (hookah.expectedEndTime && hookah.nextReminderTime > hookah.expectedEndTime) {
           hookah.nextReminderTime = hookah.expectedEndTime;
+        }
+        if (hookah.expectedEndTime && now >= hookah.expectedEndTime) {
+          enterHookahOvertime(table, hookah, hookah.expectedEndTime);
         }
       }
     });
@@ -336,10 +368,35 @@ function clamp(value, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
 }
 
-function getVisibleHookahCount(table) {
-  const active = table.hookahs.filter((hookah) => hookah.status === 'active' || hookah.status === 'preheat').length;
-  const desired = Math.min(HOOKAHS_PER_TABLE, Math.max(1, active + 1));
-  return desired;
+function isHookahEngaged(hookah) {
+  if (!hookah) {
+    return false;
+  }
+  return (
+    hookah.status === 'active' ||
+    hookah.status === 'preheat' ||
+    hookah.status === 'ordered' ||
+    hookah.status === 'overtime'
+  );
+}
+
+function getVisibleHookahIndices(table) {
+  const engaged = table.hookahs.filter((hookah) => isHookahEngaged(hookah));
+  const visible = engaged.map((hookah) => hookah.index);
+  const desired = Math.min(HOOKAHS_PER_TABLE, Math.max(1, visible.length + 1));
+
+  if (visible.length < desired) {
+    table.hookahs.forEach((hookah) => {
+      if (visible.length >= desired) {
+        return;
+      }
+      if (!visible.includes(hookah.index)) {
+        visible.push(hookah.index);
+      }
+    });
+  }
+
+  return visible.slice(0, desired);
 }
 
 function getFreeHookahSlots(table) {
@@ -347,7 +404,7 @@ function getFreeHookahSlots(table) {
 }
 
 function getActiveHookahCount(table) {
-  return table.hookahs.filter((hookah) => hookah.status === 'active' || hookah.status === 'preheat').length;
+  return table.hookahs.filter((hookah) => isHookahEngaged(hookah)).length;
 }
 
 function renderTables() {
@@ -368,7 +425,7 @@ function renderTables() {
 
   items.forEach(({ table }) => {
     if (hideInactiveTables && !table.sessionStartedAt && !table.sessionExpired) {
-      const hasActive = table.hookahs.some((hookah) => hookah.status === 'active' || hookah.status === 'preheat');
+      const hasActive = table.hookahs.some((hookah) => isHookahEngaged(hookah));
       if (!hasActive) {
         return;
       }
@@ -404,11 +461,11 @@ function renderTables() {
 
     if (hookahList) {
       hookahList.innerHTML = '';
-      const visible = getVisibleHookahCount(table);
-      for (let index = 0; index < visible; index += 1) {
-        const hookah = table.hookahs[index];
+      const visibleIndices = getVisibleHookahIndices(table);
+      visibleIndices.forEach((hookahIndex) => {
+        const hookah = table.hookahs[hookahIndex - 1];
         if (!hookah) {
-          continue;
+          return;
         }
         const hookahNode = chipTemplate.content.firstElementChild.cloneNode(true);
         const button = hookahNode.querySelector('[data-action="toggle-hookah"]');
@@ -425,6 +482,18 @@ function renderTables() {
           hookahNode.dataset.state = 'active';
           if (timerNode) {
             const startedAt = hookah.startedAt ?? now;
+            timerNode.textContent = formatStopwatch(now - startedAt);
+          }
+        } else if (hookah.status === 'overtime') {
+          hookahNode.dataset.state = 'overtime';
+          if (timerNode) {
+            const startedAt = hookah.startedAt ?? now;
+            timerNode.textContent = formatStopwatch(now - startedAt);
+          }
+        } else if (hookah.status === 'ordered') {
+          hookahNode.dataset.state = 'ordered';
+          if (timerNode) {
+            const startedAt = hookah.orderStartedAt ?? now;
             timerNode.textContent = formatStopwatch(now - startedAt);
           }
         } else if (hookah.status === 'preheat') {
@@ -463,7 +532,7 @@ function renderTables() {
         }
 
         hookahList.appendChild(hookahNode);
-      }
+      });
     }
 
     fragment.appendChild(node);
@@ -475,7 +544,10 @@ function renderTables() {
 
 function getTableSummary(table, now) {
   if (table.sessionExpired) {
-    return '00:00';
+    if (table.sessionExpiredAt) {
+      return `+${formatStopwatch(now - table.sessionExpiredAt)}`;
+    }
+    return '+00:00';
   }
   if (table.sessionEndTime && now < table.sessionEndTime) {
     const remaining = table.sessionEndTime - now;
@@ -496,19 +568,29 @@ function getTableSummary(table, now) {
 
 function getTableAlertLevel(table, now) {
   if (table.sessionExpired) {
-    return 'due';
+    return 'expired';
   }
   let hasSoon = false;
-  let hasActive = false;
+  let hasServing = false;
+  let hasPending = false;
+  let hasOvertime = false;
   table.hookahs.forEach((hookah) => {
+    if (hookah.status === 'ordered') {
+      hasPending = true;
+      return;
+    }
     if (hookah.status === 'preheat') {
-      hasActive = true;
+      hasServing = true;
+      return;
+    }
+    if (hookah.status === 'overtime') {
+      hasOvertime = true;
       return;
     }
     if (hookah.status !== 'active') {
       return;
     }
-    hasActive = true;
+    hasServing = true;
     const alert = getHookahAlertLevel(hookah, now);
     if (alert === 'due') {
       hasSoon = true;
@@ -521,8 +603,14 @@ function getTableAlertLevel(table, now) {
   if (hasSoon) {
     return 'soon';
   }
-  if (hasActive) {
+  if (hasServing) {
     return 'ok';
+  }
+  if (hasOvertime) {
+    return 'overtime';
+  }
+  if (hasPending) {
+    return 'pending';
   }
   return 'inactive';
 }
@@ -544,8 +632,14 @@ function getTableSortValue(table, now) {
 }
 
 function getHookahAlertLevel(hookah, now) {
+  if (hookah.status === 'ordered') {
+    return 'ordered';
+  }
   if (hookah.status === 'preheat') {
     return 'preheat';
+  }
+  if (hookah.status === 'overtime') {
+    return 'overtime';
   }
   if (hookah.status !== 'active') {
     return 'inactive';
@@ -574,7 +668,7 @@ function renderHookahProgress(node, hookah, alert, now) {
     return;
   }
 
-  if (hookah.status !== 'active') {
+  if (hookah.status !== 'active' && hookah.status !== 'overtime') {
     container.hidden = true;
     markers.innerHTML = '';
     meta.textContent = '';
@@ -584,13 +678,14 @@ function renderHookahProgress(node, hookah, alert, now) {
   const segments = hookah.replacements + 1;
   const totalMs = getHookahTotalMs(hookah);
   const elapsed = now - (hookah.startedAt || now);
-  const ratio = clamp(elapsed / totalMs);
+  const ratio = hookah.status === 'overtime' ? 1 : clamp(elapsed / totalMs);
   const replacementsDone = Math.min(
     hookah.replacements,
     Math.floor(elapsed / (hookah.intervalMinutes * 60 * 1000)),
   );
 
-  meta.textContent = `Замены ${replacementsDone} / ${hookah.replacements}`;
+  const totalReplacements = Math.max(1, hookah.replacements);
+  meta.textContent = `Замены ${Math.min(replacementsDone, totalReplacements)} / ${totalReplacements}`;
 
   fill.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
   fill.style.backgroundColor = getProgressColor(alert);
@@ -612,18 +707,21 @@ function getTableDurationMs() {
 }
 
 function updateTableSession(table) {
-  const activeHookahs = table.hookahs.filter((hookah) => hookah.status === 'active' || hookah.status === 'preheat');
+  const activeHookahs = table.hookahs.filter(
+    (hookah) => hookah.status === 'active' || hookah.status === 'preheat' || hookah.status === 'overtime',
+  );
   if (!activeHookahs.length) {
     table.sessionStartedAt = null;
     table.sessionEndTime = null;
     table.sessionExpired = false;
+    table.sessionExpiredAt = null;
     return;
   }
 
   const now = Date.now();
   const durationMs = getTableDurationMs();
   const startTimes = activeHookahs.map((hookah) => {
-    if (hookah.status === 'active') {
+    if (hookah.status === 'active' || hookah.status === 'overtime') {
       return hookah.startedAt ?? now;
     }
     return hookah.preheatStartedAt ?? now;
@@ -633,7 +731,9 @@ function updateTableSession(table) {
   table.sessionStartedAt = earliestStart;
 
   const endCandidates = activeHookahs.map((hookah) => {
-    const base = hookah.status === 'active' ? hookah.startedAt ?? now : hookah.preheatStartedAt ?? now;
+    const base = hookah.status === 'active' || hookah.status === 'overtime'
+      ? hookah.startedAt ?? now
+      : hookah.preheatStartedAt ?? now;
     return base + durationMs;
   });
 
@@ -644,6 +744,7 @@ function activateHookahSession(table, hookah, startTime = Date.now()) {
   hookah.status = 'active';
   hookah.preheatStartedAt = null;
   hookah.preheatUntil = null;
+  hookah.orderStartedAt = null;
   hookah.startedAt = startTime;
   hookah.lastServiceAt = startTime;
   hookah.intervalMinutes = settings.intervalMinutes;
@@ -655,11 +756,24 @@ function activateHookahSession(table, hookah, startTime = Date.now()) {
     hookah.nextReminderTime = hookah.expectedEndTime;
   }
   hookah.alertNotified = null;
+  hookah.overtimeStartedAt = null;
 
   if (!table.sessionStartedAt || table.sessionExpired) {
     table.sessionStartedAt = startTime;
-    table.sessionExpired = false;
   }
+  table.sessionExpired = false;
+  table.sessionExpiredAt = null;
+  updateTableSession(table);
+}
+
+function enterHookahOvertime(table, hookah, timestamp = Date.now()) {
+  if (!hookah) {
+    return;
+  }
+  hookah.status = 'overtime';
+  hookah.overtimeStartedAt = hookah.overtimeStartedAt ?? timestamp;
+  hookah.nextReminderTime = null;
+  hookah.alertNotified = null;
   updateTableSession(table);
 }
 
@@ -671,6 +785,8 @@ function getProgressColor(alert) {
       return '#ffc857';
     case 'ok':
       return '#2e9b62';
+    case 'overtime':
+      return '#9da3c0';
     default:
       return 'rgba(255,255,255,0.25)';
   }
@@ -724,6 +840,7 @@ function processTimers() {
   state.tables.forEach((table) => {
     if (table.sessionEndTime && now >= table.sessionEndTime && !table.sessionExpired) {
       table.sessionExpired = true;
+      table.sessionExpiredAt = table.sessionExpiredAt ?? table.sessionEndTime ?? now;
       table.sessionEndTime = null;
       showNotification(`${table.name}: время стола закончилось.`, 'danger');
       dirty = true;
@@ -749,9 +866,24 @@ function processTimers() {
         return;
       }
 
-      if (hookah.status !== 'active' || !hookah.nextReminderTime) {
+      if (hookah.status === 'overtime') {
         return;
       }
+
+      if (hookah.status !== 'active') {
+        return;
+      }
+
+      if (hookah.expectedEndTime && now >= hookah.expectedEndTime) {
+        enterHookahOvertime(table, hookah, hookah.expectedEndTime);
+        dirty = true;
+        return;
+      }
+
+      if (!hookah.nextReminderTime) {
+        return;
+      }
+
       if (now >= hookah.nextReminderTime) {
         if (hookah.alertNotified !== hookah.nextReminderTime) {
           showNotification(`${table.name} • Кальян ${hookah.index}: пора сменить угли.`, 'warning');
@@ -768,6 +900,30 @@ function processTimers() {
   renderTables();
 }
 
+function orderHookah(tableId, hookahIndex) {
+  const table = state.tables.find((item) => item.id === tableId);
+  if (!table) {
+    return;
+  }
+  const hookah = table.hookahs[hookahIndex - 1];
+  if (!hookah || hookah.status !== 'idle') {
+    return;
+  }
+  const now = Date.now();
+  hookah.status = 'ordered';
+  hookah.orderStartedAt = now;
+  hookah.startedAt = null;
+  hookah.lastServiceAt = null;
+  hookah.expectedEndTime = null;
+  hookah.nextReminderTime = null;
+  hookah.alertNotified = null;
+  hookah.preheatStartedAt = null;
+  hookah.preheatUntil = null;
+  hookah.overtimeStartedAt = null;
+  saveState();
+  renderTables();
+}
+
 function startHookah(tableId, hookahIndex) {
   const table = state.tables.find((item) => item.id === tableId);
   if (!table) {
@@ -780,6 +936,8 @@ function startHookah(tableId, hookahIndex) {
   const now = Date.now();
   hookah.intervalMinutes = settings.intervalMinutes;
   hookah.replacements = settings.replacements;
+  hookah.orderStartedAt = null;
+  hookah.overtimeStartedAt = null;
 
   if (settings.preheatEnabled) {
     hookah.status = 'preheat';
@@ -792,8 +950,9 @@ function startHookah(tableId, hookahIndex) {
     hookah.alertNotified = null;
     if (!table.sessionStartedAt || table.sessionExpired) {
       table.sessionStartedAt = now;
-      table.sessionExpired = false;
     }
+    table.sessionExpired = false;
+    table.sessionExpiredAt = null;
     updateTableSession(table);
   } else {
     activateHookahSession(table, hookah, now);
@@ -803,30 +962,36 @@ function startHookah(tableId, hookahIndex) {
   renderTables();
 }
 
-function advanceHookahCycle(hookah, now) {
+function advanceHookahCycle(table, hookah, now) {
   if (!hookah || hookah.status !== 'active') {
     return;
   }
 
+  if (hookah.expectedEndTime && now >= hookah.expectedEndTime) {
+    enterHookahOvertime(table, hookah, hookah.expectedEndTime);
+    return;
+  }
+
   const intervalMs = hookah.intervalMinutes * 60 * 1000;
-  const startReference = hookah.startedAt ?? now;
-  const lastReference = hookah.lastServiceAt ?? startReference;
-  const currentNext = hookah.nextReminderTime ?? (lastReference + intervalMs);
+  const startTime = hookah.startedAt ?? now;
+  const previousReminder = hookah.nextReminderTime ?? (hookah.lastServiceAt ?? startTime) + intervalMs;
+  let nextReminderTime = previousReminder + intervalMs;
 
-  let nextReminderTime;
-
-  if (now < currentNext) {
-    nextReminderTime = currentNext + intervalMs;
-  } else {
-    nextReminderTime = now + intervalMs;
+  if (hookah.expectedEndTime && nextReminderTime >= hookah.expectedEndTime) {
+    enterHookahOvertime(table, hookah, hookah.expectedEndTime);
+    return;
   }
 
-  if (hookah.expectedEndTime && nextReminderTime > hookah.expectedEndTime) {
-    nextReminderTime = hookah.expectedEndTime;
+  while (nextReminderTime <= now) {
+    nextReminderTime += intervalMs;
+    if (hookah.expectedEndTime && nextReminderTime >= hookah.expectedEndTime) {
+      enterHookahOvertime(table, hookah, hookah.expectedEndTime);
+      return;
+    }
   }
 
+  hookah.lastServiceAt = now;
   hookah.nextReminderTime = nextReminderTime;
-  hookah.lastServiceAt = nextReminderTime - intervalMs;
   hookah.alertNotified = null;
 }
 
@@ -840,7 +1005,7 @@ function acknowledgeHookah(tableId, hookahIndex) {
     return;
   }
   const now = Date.now();
-  advanceHookahCycle(hookah, now);
+  advanceHookahCycle(table, hookah, now);
   saveState();
   renderTables();
 }
@@ -861,10 +1026,13 @@ function resetTable(tableId) {
     hookah.replacements = settings.replacements;
     hookah.preheatStartedAt = null;
     hookah.preheatUntil = null;
+    hookah.orderStartedAt = null;
+    hookah.overtimeStartedAt = null;
   });
   table.sessionStartedAt = null;
   table.sessionEndTime = null;
   table.sessionExpired = false;
+  table.sessionExpiredAt = null;
   updateTableSession(table);
   saveState();
   renderTables();
@@ -890,9 +1058,12 @@ function removeHookah(tableId, hookahIndex) {
   hookah.preheatUntil = null;
   hookah.intervalMinutes = settings.intervalMinutes;
   hookah.replacements = settings.replacements;
+  hookah.orderStartedAt = null;
+  hookah.overtimeStartedAt = null;
 
-  if (!table.hookahs.some((item) => item.status === 'active' || item.status === 'preheat')) {
+  if (!table.hookahs.some((item) => isHookahEngaged(item))) {
     table.sessionExpired = false;
+    table.sessionExpiredAt = null;
   }
 
   updateTableSession(table);
@@ -912,7 +1083,13 @@ function transferHookahs(fromId, toId) {
   if (!source || !target) {
     return { success: false, reason: 'Не удалось определить выбранные столы.' };
   }
-  const activeHookahs = source.hookahs.filter((hookah) => hookah.status === 'active' || hookah.status === 'preheat');
+  const activeHookahs = source.hookahs.filter(
+    (hookah) =>
+      hookah.status === 'active' ||
+      hookah.status === 'preheat' ||
+      hookah.status === 'ordered' ||
+      hookah.status === 'overtime',
+  );
   if (!activeHookahs.length) {
     return { success: false, reason: 'На исходном столе нет активных кальянов для переноса.' };
   }
@@ -936,10 +1113,17 @@ function transferHookahs(fromId, toId) {
     destination.alertNotified = hookah.alertNotified;
     destination.preheatStartedAt = hookah.preheatStartedAt;
     destination.preheatUntil = hookah.preheatUntil;
+    destination.orderStartedAt = hookah.orderStartedAt;
+    destination.overtimeStartedAt = hookah.overtimeStartedAt;
   });
 
   source.hookahs.forEach((hookah) => {
-    if (hookah.status === 'active' || hookah.status === 'preheat') {
+    if (
+      hookah.status === 'active' ||
+      hookah.status === 'preheat' ||
+      hookah.status === 'ordered' ||
+      hookah.status === 'overtime'
+    ) {
       hookah.status = 'idle';
       hookah.startedAt = null;
       hookah.lastServiceAt = null;
@@ -950,14 +1134,19 @@ function transferHookahs(fromId, toId) {
       hookah.replacements = settings.replacements;
       hookah.preheatStartedAt = null;
       hookah.preheatUntil = null;
+      hookah.orderStartedAt = null;
+      hookah.overtimeStartedAt = null;
     }
   });
 
   target.sessionExpired = false;
+  target.sessionExpiredAt = null;
   updateTableSession(target);
 
-  source.sessionExpired = false;
-  if (!source.hookahs.some((hookah) => hookah.status === 'active' || hookah.status === 'preheat')) {
+  const sourceHasServing = source.hookahs.some((hookah) => hookah.status === 'active' || hookah.status === 'preheat');
+  if (!sourceHasServing) {
+    source.sessionExpired = false;
+    source.sessionExpiredAt = null;
     source.sessionStartedAt = null;
     source.sessionEndTime = null;
   }
@@ -1054,6 +1243,33 @@ function updateClock() {
     second: '2-digit',
   });
   clockNode.textContent = `${dateFormatter.format(now)} ${timeFormatter.format(now)} МСК`;
+}
+
+function applyHeaderCollapseState() {
+  const body = document.body;
+  if (!body) {
+    return;
+  }
+  body.classList.toggle('header-collapsed', headerCollapsed);
+  if (headerToggleButton) {
+    headerToggleButton.setAttribute('aria-expanded', headerCollapsed ? 'false' : 'true');
+    headerToggleButton.textContent = headerCollapsed ? 'Показать шапку' : 'Скрыть шапку';
+  }
+}
+
+function applyControlPanelState() {
+  const body = document.body;
+  if (!body) {
+    return;
+  }
+  body.classList.toggle('controls-collapsed', controlsCollapsed);
+  if (controlPanelToggle) {
+    controlPanelToggle.setAttribute('aria-expanded', controlsCollapsed ? 'false' : 'true');
+    controlPanelToggle.textContent = controlsCollapsed ? 'Показать панель' : 'Скрыть панель';
+  }
+  if (controlPanel) {
+    controlPanel.setAttribute('aria-hidden', controlsCollapsed ? 'true' : 'false');
+  }
 }
 
 function closeDialog(node) {
@@ -1265,7 +1481,7 @@ function handleBulkAction(includeYellow = false) {
       }
       const alert = getHookahAlertLevel(hookah, now);
       if (alert === 'due' || (includeYellow && alert === 'soon')) {
-        advanceHookahCycle(hookah, now);
+        advanceHookahCycle(table, hookah, now);
       }
     });
   });
@@ -1388,6 +1604,46 @@ if (confirmAccept) {
   });
 }
 
+if (headerToggleButton) {
+  headerToggleButton.addEventListener('click', () => {
+    headerCollapsed = !headerCollapsed;
+    applyHeaderCollapseState();
+  });
+}
+
+const headerMediaHandler = (event) => {
+  headerCollapsed = event.matches;
+  applyHeaderCollapseState();
+};
+
+if (headerCollapseMedia) {
+  if (headerCollapseMedia.addEventListener) {
+    headerCollapseMedia.addEventListener('change', headerMediaHandler);
+  } else if (headerCollapseMedia.addListener) {
+    headerCollapseMedia.addListener(headerMediaHandler);
+  }
+}
+
+if (controlPanelToggle) {
+  controlPanelToggle.addEventListener('click', () => {
+    controlsCollapsed = !controlsCollapsed;
+    applyControlPanelState();
+  });
+}
+
+const controlPanelMediaHandler = (event) => {
+  controlsCollapsed = event.matches;
+  applyControlPanelState();
+};
+
+if (controlCollapseMedia) {
+  if (controlCollapseMedia.addEventListener) {
+    controlCollapseMedia.addEventListener('change', controlPanelMediaHandler);
+  } else if (controlCollapseMedia.addListener) {
+    controlCollapseMedia.addListener(controlPanelMediaHandler);
+  }
+}
+
 function getDialogDismissButtons() {
   return document.querySelectorAll('[data-dialog-dismiss]');
 }
@@ -1428,6 +1684,10 @@ tableContainer?.addEventListener('click', (event) => {
       return;
     }
     if (hookah.status === 'idle') {
+      orderHookah(tableId, hookahIndex);
+      return;
+    }
+    if (hookah.status === 'ordered') {
       startHookah(tableId, hookahIndex);
       return;
     }
