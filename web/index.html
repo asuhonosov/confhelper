@@ -17,21 +17,33 @@
         />
         <div class="page-header__info">
           <h1>HookahPlace Red Rose — Поток</h1>
-          <p class="page-header__subtitle">
+          <p class="page-header__subtitle" data-header-details>
             Контролируйте столы, бары и стафф-зону, следите за заменами углей и временем сеанса в одном окне.
           </p>
         </div>
       </div>
       <div class="page-header__actions">
-        <div class="page-header__contact">Антон Сухоносов, tg @cukerchik</div>
-        <div class="page-header__clock" data-clock></div>
+        <div class="page-header__contact" data-header-details>Антон Сухоносов, tg @cukerchik</div>
+        <div class="page-header__clock" data-clock data-header-details></div>
+        <button
+          type="button"
+          class="page-header__toggle page-header__toggle--panel"
+          data-control-panel-toggle
+          aria-expanded="true"
+          aria-controls="control-panel"
+        >
+          Скрыть панель
+        </button>
+        <button type="button" class="page-header__toggle" data-header-toggle aria-expanded="true">
+          Скрыть шапку
+        </button>
       </div>
     </div>
   </header>
 
   <main class="layout" data-layout>
     <section class="layout__main">
-      <div class="control-bar">
+      <div class="control-bar" data-control-panel id="control-panel" aria-hidden="false">
         <div class="control-bar__group">
           <button type="button" class="control-button" data-bulk-action="red">
             <span class="control-button__label">Поменял везде на красных —</span>
