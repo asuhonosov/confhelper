@@ -180,15 +180,25 @@ setInterval(() => {
 }, SYNC_INTERVAL_MS);
 
 async function backendSyncTick() {
-  if (!backendStateDirty || syncInFlight) {
+  if (syncInFlight) {
     return;
   }
 
   syncInFlight = true;
   try {
-    await saveStateToBackend();
+    if (backendStateDirty) {
+      await saveStateToBackend();
+    } else {
+      const remote = await loadStateFromBackend();
+      if (remote && typeof remote === 'object') {
+        const remoteHash = hashState(remote);
+        if (remoteHash !== lastSyncedHash) {
+          applyStateFromBackend(remote);
+        }
+      }
+    }
   } catch (e) {
-    console.warn('Backend sync failed, will retry', e);
+    console.warn('Backend sync tick failed', e);
   } finally {
     syncInFlight = false;
   }
@@ -198,13 +208,7 @@ async function initializeBackendSync() {
   try {
     const remoteState = await loadStateFromBackend();
     if (remoteState && typeof remoteState === 'object') {
-      state = remoteState;
-      applySettingsToState();
-      renderTables();
-      renderNotifications();
-      saveState();
-      lastSyncedHash = hashState(state);
-      backendStateDirty = false;
+      applyStateFromBackend(remoteState);
     }
     logEvent('app_opened', {});
   } catch (e) {
@@ -388,6 +392,19 @@ function getAllowedTableDuration(value) {
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   markStateDirtyForBackend();
+}
+
+function applyStateFromBackend(remoteState) {
+  state = remoteState || {};
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+  lastSyncedHash = hashState(state);
+  backendStateDirty = false;
+
+  applySettingsToState();
+  renderTables();
+  renderNotifications();
 }
 
 function saveSettings() {
@@ -1835,6 +1852,7 @@ if (settingsForm) {
     applySettingsToState();
     applyVisualSettings();
     renderTables();
+    applyInactiveFilter();
     renderNotifications();
     saveState();
     closeDialog(settingsDialog);
