@@ -2,6 +2,75 @@ const STORAGE_KEY = 'hookah-flow-state-v1';
 const SETTINGS_KEY = 'hookah-flow-settings-v1';
 const PREFERENCES_KEY = 'hookah-flow-preferences-v1';
 
+const API_BASE = 'https://d5di85pklqmoab3etmus.aqkd4clz.apigw.yandexcloud.net';
+const BAR_ID = 'red-rose-1';
+
+async function apiRequest(path, options = {}) {
+  const url = `${API_BASE}${path}`;
+  const config = {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  };
+  try {
+    const response = await fetch(url, config);
+    if (!response.ok) {
+      console.error('API error', response.status, response.statusText);
+      throw new Error(`API error ${response.status}`);
+    }
+    if (response.status === 204) {
+      return null;
+    }
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
+  } catch (error) {
+    console.error('API request failed', error);
+    throw error;
+  }
+}
+
+async function loadStateFromBackend() {
+  try {
+    const data = await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
+      method: 'GET',
+    });
+    if (!data || !data.state) {
+      return null;
+    }
+    return data.state;
+  } catch (error) {
+    console.warn('Не удалось загрузить состояние с бэкенда, используем локальное.', error);
+    return null;
+  }
+}
+
+async function saveStateToBackend(currentState) {
+  try {
+    await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
+      method: 'POST',
+      body: JSON.stringify({ state: currentState }),
+    });
+  } catch (error) {
+    console.warn('Не удалось сохранить состояние на бэкенд.', error);
+  }
+}
+
+async function logEvent(type, payload = {}) {
+  const event = {
+    type,
+    bar_id: BAR_ID,
+    ...payload,
+  };
+
+  try {
+    await apiRequest(`/api/event?bar_id=${encodeURIComponent(BAR_ID)}`, {
+      method: 'POST',
+      body: JSON.stringify(event),
+    });
+  } catch (error) {
+    console.warn('Не удалось отправить событие на бэкенд.', error);
+  }
+}
+
 const TABLE_NAMES = [
   'Стол 1',
   'Стол 2',
@@ -73,6 +142,7 @@ let notificationsExpanded = false;
 let pendingResetTableId = null;
 let headerCollapsed = headerCollapseMedia ? headerCollapseMedia.matches : false;
 let controlsCollapsed = controlCollapseMedia ? controlCollapseMedia.matches : false;
+let isApplyingRemoteState = false;
 
 initializePreferences();
 applySettingsToState();
@@ -82,11 +152,57 @@ renderNotifications();
 updateClock();
 applyHeaderCollapseState();
 applyControlPanelState();
+initializeBackendSync();
 
 setInterval(() => {
   processTimers();
   updateClock();
 }, 1000);
+
+async function initializeBackendSync() {
+  try {
+    const remoteState = await loadStateFromBackend();
+    if (remoteState && typeof remoteState === 'object') {
+      isApplyingRemoteState = true;
+      state = remoteState;
+      applySettingsToState();
+      renderTables();
+      renderNotifications();
+      isApplyingRemoteState = false;
+      saveState();
+    } else {
+      await saveStateToBackend(state);
+    }
+    logEvent('app_opened', {});
+  } catch (error) {
+    console.warn('Ошибка инициализации синхронизации.', error);
+  }
+  startSyncLoop();
+}
+
+function startSyncLoop() {
+  setInterval(async () => {
+    try {
+      const remote = await loadStateFromBackend();
+      if (!remote || typeof remote !== 'object') {
+        return;
+      }
+      const localJson = JSON.stringify(state);
+      const remoteJson = JSON.stringify(remote);
+      if (localJson !== remoteJson) {
+        isApplyingRemoteState = true;
+        state = remote;
+        applySettingsToState();
+        renderTables();
+        renderNotifications();
+        isApplyingRemoteState = false;
+        saveState();
+      }
+    } catch (error) {
+      console.warn('Ошибка фоновой синхронизации', error);
+    }
+  }, 1500);
+}
 
 function loadState() {
   try {
@@ -263,6 +379,9 @@ function getAllowedTableDuration(value) {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!isApplyingRemoteState) {
+    saveStateToBackend(state);
+  }
 }
 
 function saveSettings() {
@@ -771,6 +890,10 @@ function enterHookahOvertime(table, hookah, timestamp = Date.now()) {
   if (!hookah) {
     return;
   }
+  logEvent('coal_overtime', {
+    table_id: table.id,
+    hookah_id: hookah.index,
+  });
   hookah.status = 'overtime';
   hookah.overtimeStartedAt = hookah.overtimeStartedAt ?? timestamp;
   hookah.nextReminderTime = null;
@@ -844,6 +967,9 @@ function processTimers() {
       table.sessionExpiredAt = table.sessionExpiredAt ?? table.sessionEndTime ?? now;
       table.sessionEndTime = null;
       showNotification(`${table.name}: время стола закончилось.`, 'danger');
+      logEvent('table_session_expired', {
+        table_id: table.id,
+      });
       dirty = true;
     }
 
@@ -921,6 +1047,10 @@ function orderHookah(tableId, hookahIndex) {
   hookah.preheatStartedAt = null;
   hookah.preheatUntil = null;
   hookah.overtimeStartedAt = null;
+  logEvent('hookah_ordered', {
+    table_id: tableId,
+    hookah_id: hookahIndex,
+  });
   saveState();
   renderTables();
 }
@@ -955,8 +1085,16 @@ function startHookah(tableId, hookahIndex) {
     table.sessionExpired = false;
     table.sessionExpiredAt = null;
     updateTableSession(table);
+    logEvent('hookah_preheat_started', {
+      table_id: tableId,
+      hookah_id: hookahIndex,
+    });
   } else {
     activateHookahSession(table, hookah, now);
+    logEvent('hookah_session_started', {
+      table_id: tableId,
+      hookah_id: hookahIndex,
+    });
   }
 
   saveState();
@@ -1009,6 +1147,10 @@ function acknowledgeHookah(tableId, hookahIndex) {
   }
   const now = Date.now();
   advanceHookahCycle(table, hookah, now);
+  logEvent('coal_replace', {
+    table_id: tableId,
+    hookah_id: hookahIndex,
+  });
   saveState();
   renderTables();
 }
@@ -1037,6 +1179,9 @@ function resetTable(tableId) {
   table.sessionExpired = false;
   table.sessionExpiredAt = null;
   updateTableSession(table);
+  logEvent('table_reset', {
+    table_id: tableId,
+  });
   saveState();
   renderTables();
 }
@@ -1070,6 +1215,10 @@ function removeHookah(tableId, hookahIndex) {
   }
 
   updateTableSession(table);
+  logEvent('hookah_removed', {
+    table_id: tableId,
+    hookah_id: hookahIndex,
+  });
   saveState();
   renderTables();
 }
@@ -1162,6 +1311,11 @@ function transferHookahs(fromId, toId, hookahIndices = []) {
 
   saveState();
   renderTables();
+  logEvent('hookah_transfer', {
+    from_table_id: fromId,
+    to_table_id: toId,
+    hookah_indices: Array.from(transferredIndices),
+  });
   return { success: true };
 }
 
@@ -1654,6 +1808,7 @@ if (settingsOpenButton) {
 if (settingsForm) {
   settingsForm.addEventListener('submit', (event) => {
     event.preventDefault();
+    const previousSettings = { ...settings };
     const formData = new FormData(settingsForm);
     const interval = getAllowedInterval(Number(formData.get('interval')));
     const replacements = getAllowedReplacement(Number(formData.get('replacements')));
@@ -1665,6 +1820,10 @@ if (settingsForm) {
       preheatEnabled,
       tableDurationMinutes: tableDuration,
     };
+    logEvent('settings_changed', {
+      old_settings: previousSettings,
+      new_settings: settings,
+    });
     saveSettings();
     applySettingsToState();
     applyVisualSettings();
