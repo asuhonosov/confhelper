@@ -53,6 +53,7 @@ const transferFromSelect = transferForm?.querySelector('[data-transfer-from]') ?
 const transferToSelect = transferForm?.querySelector('[data-transfer-to]') ?? null;
 const transferErrorNode = transferForm?.querySelector('[data-transfer-error]') ?? null;
 const transferSubmitButton = transferForm?.querySelector('[data-transfer-submit]') ?? null;
+const transferHookahList = transferForm?.querySelector('[data-transfer-hookah-list]') ?? null;
 const confirmDialog = document.querySelector('[data-confirm]');
 const confirmMessage = document.querySelector('[data-confirm-message]');
 const confirmAccept = document.querySelector('[data-confirm-accept]');
@@ -978,15 +979,17 @@ function advanceHookahCycle(table, hookah, now) {
   let nextReminderTime = previousReminder + intervalMs;
 
   if (hookah.expectedEndTime && nextReminderTime >= hookah.expectedEndTime) {
-    enterHookahOvertime(table, hookah, hookah.expectedEndTime);
-    return;
+    nextReminderTime = hookah.expectedEndTime;
   }
 
-  while (nextReminderTime <= now) {
+  while (
+    (!hookah.expectedEndTime && nextReminderTime <= now) ||
+    (hookah.expectedEndTime && nextReminderTime <= now && nextReminderTime < hookah.expectedEndTime)
+  ) {
     nextReminderTime += intervalMs;
     if (hookah.expectedEndTime && nextReminderTime >= hookah.expectedEndTime) {
-      enterHookahOvertime(table, hookah, hookah.expectedEndTime);
-      return;
+      nextReminderTime = hookah.expectedEndTime;
+      break;
     }
   }
 
@@ -1071,7 +1074,7 @@ function removeHookah(tableId, hookahIndex) {
   renderTables();
 }
 
-function transferHookahs(fromId, toId) {
+function transferHookahs(fromId, toId, hookahIndices = []) {
   if (!fromId || !toId) {
     return { success: false, reason: 'Укажите столы для переноса.' };
   }
@@ -1083,16 +1086,22 @@ function transferHookahs(fromId, toId) {
   if (!source || !target) {
     return { success: false, reason: 'Не удалось определить выбранные столы.' };
   }
+  const selection = (hookahIndices ?? [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const selectedSet = new Set(selection);
   const activeHookahs = source.hookahs.filter(
     (hookah) =>
-      hookah.status === 'active' ||
-      hookah.status === 'preheat' ||
-      hookah.status === 'ordered' ||
-      hookah.status === 'overtime',
+      (hookah.status === 'active' ||
+        hookah.status === 'preheat' ||
+        hookah.status === 'ordered' ||
+        hookah.status === 'overtime') &&
+      (selectedSet.size === 0 || selectedSet.has(hookah.index)),
   );
   if (!activeHookahs.length) {
-    return { success: false, reason: 'На исходном столе нет активных кальянов для переноса.' };
+    return { success: false, reason: 'Выберите кальяны для переноса.' };
   }
+  const transferredIndices = new Set(activeHookahs.map((hookah) => hookah.index));
   const availableSlots = target.hookahs.filter((hookah) => hookah.status === 'idle');
   if (availableSlots.length < activeHookahs.length) {
     return { success: false, reason: 'Недостаточно свободных кальянов на целевом столе.' };
@@ -1119,10 +1128,8 @@ function transferHookahs(fromId, toId) {
 
   source.hookahs.forEach((hookah) => {
     if (
-      hookah.status === 'active' ||
-      hookah.status === 'preheat' ||
-      hookah.status === 'ordered' ||
-      hookah.status === 'overtime'
+      transferredIndices.has(hookah.index) &&
+      (hookah.status === 'active' || hookah.status === 'preheat' || hookah.status === 'ordered' || hookah.status === 'overtime')
     ) {
       hookah.status = 'idle';
       hookah.startedAt = null;
@@ -1317,7 +1324,7 @@ function populateSettingsForm() {
 }
 
 
-function buildTransferDestinationOptions(excludeId, preferredValue) {
+function buildTransferDestinationOptions(excludeId, preferredValue, requiredSlots = 1) {
   if (!transferToSelect) {
     return;
   }
@@ -1335,30 +1342,139 @@ function buildTransferDestinationOptions(excludeId, preferredValue) {
     return;
   }
 
-  const fromTable = state.tables.find((item) => item.id === excludeId) ?? null;
-  const activeCount = fromTable ? getActiveHookahCount(fromTable) : 0;
-  let fallbackOption = null;
-  let capacityOption = null;
-
-  destinations.forEach((table) => {
+  const options = destinations.map((table) => {
     const option = document.createElement('option');
     option.value = table.id;
     const freeSlots = getFreeHookahSlots(table);
     option.textContent = `${table.name} (свободно ${freeSlots})`;
     option.dataset.freeSlots = String(freeSlots);
+    if (freeSlots < requiredSlots) {
+      option.disabled = true;
+      option.textContent += ' — нет мест';
+    }
     transferToSelect.appendChild(option);
-
-    if (preferredValue && table.id === preferredValue) {
-      fallbackOption = option;
-    }
-    if (!capacityOption && freeSlots >= activeCount) {
-      capacityOption = option;
-    }
+    return option;
   });
 
-  const target = fallbackOption ?? capacityOption ?? transferToSelect.options[0] ?? null;
+  const availableOptions = options.filter((option) => !option.disabled);
+  let target = null;
+  if (availableOptions.length) {
+    target = availableOptions.find((option) => option.value === preferredValue) ?? availableOptions[0];
+  } else {
+    target = options.find((option) => option.value === preferredValue) ?? options[0] ?? null;
+  }
   if (target) {
     transferToSelect.value = target.value;
+  }
+}
+
+function renderTransferHookahChoices(tableId) {
+  if (!transferHookahList) {
+    return;
+  }
+  transferHookahList.innerHTML = '';
+
+  if (!tableId) {
+    const empty = document.createElement('p');
+    empty.className = 'transfer-hookah-list__empty';
+    empty.textContent = 'Выберите стол для отображения активных кальянов.';
+    transferHookahList.appendChild(empty);
+    return;
+  }
+
+  const table = state.tables.find((item) => item.id === tableId) ?? null;
+  if (!table) {
+    const empty = document.createElement('p');
+    empty.className = 'transfer-hookah-list__empty';
+    empty.textContent = 'Стол не найден.';
+    transferHookahList.appendChild(empty);
+    return;
+  }
+
+  const hookahs = table.hookahs.filter((hookah) => isHookahEngaged(hookah));
+  if (!hookahs.length) {
+    const empty = document.createElement('p');
+    empty.className = 'transfer-hookah-list__empty';
+    empty.textContent = 'На столе нет активных кальянов для переноса.';
+    transferHookahList.appendChild(empty);
+    return;
+  }
+
+  const now = Date.now();
+  hookahs.forEach((hookah) => {
+    const option = document.createElement('label');
+    option.className = 'transfer-hookah-option';
+    option.dataset.alert = getHookahAlertLevel(hookah, now);
+    option.dataset.state = hookah.status;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.name = 'hookahs';
+    checkbox.value = hookah.index;
+    checkbox.checked = true;
+
+    const body = document.createElement('span');
+    body.className = 'transfer-hookah-option__body';
+
+    const title = document.createElement('span');
+    title.className = 'transfer-hookah-option__title';
+    title.textContent = `Кальян ${hookah.index}`;
+
+    const meta = document.createElement('span');
+    meta.className = 'transfer-hookah-option__meta';
+    meta.textContent = getTransferHookahDescription(hookah, now);
+
+    body.appendChild(title);
+    body.appendChild(meta);
+
+    option.appendChild(checkbox);
+    option.appendChild(body);
+    transferHookahList.appendChild(option);
+  });
+}
+
+function getSelectedTransferHookahs() {
+  if (!transferHookahList) {
+    return [];
+  }
+  return Array.from(transferHookahList.querySelectorAll('input[name="hookahs"]:checked'))
+    .map((input) => Number(input.value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function getTransferSelectionCount() {
+  return getSelectedTransferHookahs().length;
+}
+
+function getTransferHookahDescription(hookah, now) {
+  switch (hookah.status) {
+    case 'ordered': {
+      const elapsed = hookah.orderStartedAt ? now - hookah.orderStartedAt : 0;
+      return `ожидание ${formatStopwatch(elapsed)}`;
+    }
+    case 'preheat': {
+      const remaining = hookah.preheatUntil ? hookah.preheatUntil - now : PREHEAT_MINUTES * 60 * 1000;
+      return `прогрев ${formatCountdownClock(remaining)}`;
+    }
+    case 'active': {
+      if (hookah.expectedEndTime && now >= hookah.expectedEndTime) {
+        return `overtime +${formatCountdownClock(now - hookah.expectedEndTime)}`;
+      }
+      if (hookah.nextReminderTime) {
+        const diff = hookah.nextReminderTime - now;
+        if (diff > 0) {
+          return `до замены ${formatCountdownClock(diff)}`;
+        }
+        return 'замена сейчас';
+      }
+      return 'в работе';
+    }
+    case 'overtime': {
+      const overtimeBase = hookah.overtimeStartedAt ?? hookah.expectedEndTime ?? hookah.startedAt ?? now;
+      return `overtime +${formatCountdownClock(now - overtimeBase)}`;
+    }
+    default:
+      return '';
   }
 }
 
@@ -1391,8 +1507,9 @@ function populateTransferForm() {
     transferFromSelect.value = initialFrom;
   }
 
+  renderTransferHookahChoices(initialFrom);
   const preferredDestination = transferToSelect?.value ?? '';
-  buildTransferDestinationOptions(initialFrom, preferredDestination);
+  syncTransferDestination(preferredDestination);
   clearTransferError();
   updateTransferSubmitState();
 }
@@ -1413,13 +1530,14 @@ function showTransferError(message) {
   transferErrorNode.hidden = false;
 }
 
-function syncTransferDestination() {
+function syncTransferDestination(preferredValue = '') {
   if (!transferFromSelect) {
     return;
   }
   const fromId = transferFromSelect.value;
-  const previousValue = transferToSelect?.value ?? '';
-  buildTransferDestinationOptions(fromId, previousValue);
+  const previousValue = preferredValue || transferToSelect?.value || '';
+  const requiredSlots = Math.max(1, getTransferSelectionCount());
+  buildTransferDestinationOptions(fromId, previousValue, requiredSlots);
 }
 
 function updateTransferSubmitState() {
@@ -1434,6 +1552,7 @@ function updateTransferSubmitState() {
 
   const fromId = transferFromSelect.value;
   const toId = transferToSelect.value;
+  const selectionCount = getTransferSelectionCount();
   const fromTable = state.tables.find((item) => item.id === fromId) ?? null;
   const toTable = state.tables.find((item) => item.id === toId) ?? null;
   let message = '';
@@ -1441,6 +1560,9 @@ function updateTransferSubmitState() {
 
   if (!fromId) {
     message = 'Выберите стол с активными кальянами';
+    disabled = true;
+  } else if (!selectionCount) {
+    message = 'Отметьте кальяны для переноса';
     disabled = true;
   } else if (!toId || !transferToSelect.options.length) {
     message = 'Нет доступного стола для переноса';
@@ -1452,13 +1574,9 @@ function updateTransferSubmitState() {
     message = 'Выберите разные столы';
     disabled = true;
   } else {
-    const activeCount = getActiveHookahCount(fromTable);
     const freeSlots = getFreeHookahSlots(toTable);
-    if (activeCount === 0) {
-      message = 'Нет активных кальянов для переноса';
-      disabled = true;
-    } else if (freeSlots < activeCount) {
-      message = `Свободных мест: ${freeSlots}. Нужен стол с большей вместимостью`;
+    if (freeSlots < selectionCount) {
+      message = `Свободных мест: ${freeSlots}. Нужно минимум ${selectionCount}.`;
       disabled = true;
     }
   }
@@ -1565,6 +1683,19 @@ if (transferOpenButton) {
 if (transferFromSelect) {
   transferFromSelect.addEventListener('change', () => {
     clearTransferError();
+    renderTransferHookahChoices(transferFromSelect.value);
+    syncTransferDestination();
+    updateTransferSubmitState();
+  });
+}
+
+if (transferHookahList) {
+  transferHookahList.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.matches('input[name="hookahs"]')) {
+      return;
+    }
+    clearTransferError();
     syncTransferDestination();
     updateTransferSubmitState();
   });
@@ -1583,7 +1714,13 @@ if (transferForm) {
     const formData = new FormData(transferForm);
     const fromId = formData.get('from');
     const toId = formData.get('to');
-    const result = transferHookahs(fromId, toId);
+    const selectedHookahs = getSelectedTransferHookahs();
+    if (!selectedHookahs.length) {
+      showTransferError('Отметьте кальяны для переноса');
+      updateTransferSubmitState();
+      return;
+    }
+    const result = transferHookahs(fromId, toId, selectedHookahs);
     if (result.success) {
       clearTransferError();
       closeDialog(transferDialog);
