@@ -1808,6 +1808,7 @@ if (settingsOpenButton) {
 if (settingsForm) {
   settingsForm.addEventListener('submit', (event) => {
     event.preventDefault();
+    // Snapshot existing settings so we can emit the diff in logs.
     const previousSettings = { ...settings };
     const formData = new FormData(settingsForm);
     const interval = getAllowedInterval(Number(formData.get('interval')));
@@ -1828,10 +1829,12 @@ if (settingsForm) {
     applySettingsToState();
     applyVisualSettings();
     renderTables();
+    applyInactiveFilter();
+    renderNotifications();
+    saveState();
     closeDialog(settingsDialog);
   });
 }
-
 if (transferOpenButton) {
   transferOpenButton.addEventListener('click', () => {
     populateTransferForm();
