@@ -4,6 +4,19 @@ const PREFERENCES_KEY = 'hookah-flow-preferences-v1';
 
 const API_BASE = 'https://d5di85pklqmoab3etmus.aqkd4clz.apigw.yandexcloud.net';
 const BAR_ID = 'red-rose-1';
+const SYNC_INTERVAL_MS = 1500;
+
+let backendStateDirty = false;
+let syncInFlight = false;
+let lastSyncedHash = null;
+
+function hashState(currentState) {
+  try {
+    return JSON.stringify(currentState);
+  } catch {
+    return '';
+  }
+}
 
 async function apiRequest(path, options = {}) {
   const url = `${API_BASE}${path}`;
@@ -11,47 +24,51 @@ async function apiRequest(path, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   };
+
   try {
-    const response = await fetch(url, config);
-    if (!response.ok) {
-      console.error('API error', response.status, response.statusText);
-      throw new Error(`API error ${response.status}`);
+    const res = await fetch(url, config);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`API error ${res.status} ${text}`);
     }
-    if (response.status === 204) {
+    if (res.status === 204) {
       return null;
     }
-    const text = await response.text();
-    return text ? JSON.parse(text) : null;
-  } catch (error) {
-    console.error('API request failed', error);
-    throw error;
+    return await res.json();
+  } catch (e) {
+    console.warn('API request failed', e);
+    throw e;
   }
+}
+
+function markStateDirtyForBackend() {
+  backendStateDirty = true;
 }
 
 async function loadStateFromBackend() {
-  try {
-    const data = await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
-      method: 'GET',
-    });
-    if (!data || !data.state) {
-      return null;
-    }
-    return data.state;
-  } catch (error) {
-    console.warn('Не удалось загрузить состояние с бэкенда, используем локальное.', error);
+  const data = await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
+    method: 'GET',
+  });
+  if (!data || typeof data.state !== 'object') {
     return null;
   }
+  return data.state;
 }
 
-async function saveStateToBackend(currentState) {
-  try {
-    await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
-      method: 'POST',
-      body: JSON.stringify({ state: currentState }),
-    });
-  } catch (error) {
-    console.warn('Не удалось сохранить состояние на бэкенд.', error);
+async function saveStateToBackend() {
+  const currentHash = hashState(state);
+  if (currentHash === lastSyncedHash) {
+    backendStateDirty = false;
+    return;
   }
+
+  await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
+    method: 'POST',
+    body: JSON.stringify({ state }),
+  });
+
+  lastSyncedHash = currentHash;
+  backendStateDirty = false;
 }
 
 async function logEvent(type, payload = {}) {
@@ -142,7 +159,6 @@ let notificationsExpanded = false;
 let pendingResetTableId = null;
 let headerCollapsed = headerCollapseMedia ? headerCollapseMedia.matches : false;
 let controlsCollapsed = controlCollapseMedia ? controlCollapseMedia.matches : false;
-let isApplyingRemoteState = false;
 
 initializePreferences();
 applySettingsToState();
@@ -159,49 +175,41 @@ setInterval(() => {
   updateClock();
 }, 1000);
 
+setInterval(() => {
+  backendSyncTick();
+}, SYNC_INTERVAL_MS);
+
+async function backendSyncTick() {
+  if (!backendStateDirty || syncInFlight) {
+    return;
+  }
+
+  syncInFlight = true;
+  try {
+    await saveStateToBackend();
+  } catch (e) {
+    console.warn('Backend sync failed, will retry', e);
+  } finally {
+    syncInFlight = false;
+  }
+}
+
 async function initializeBackendSync() {
   try {
     const remoteState = await loadStateFromBackend();
     if (remoteState && typeof remoteState === 'object') {
-      isApplyingRemoteState = true;
       state = remoteState;
       applySettingsToState();
       renderTables();
       renderNotifications();
-      isApplyingRemoteState = false;
       saveState();
-    } else {
-      await saveStateToBackend(state);
+      lastSyncedHash = hashState(state);
+      backendStateDirty = false;
     }
     logEvent('app_opened', {});
-  } catch (error) {
-    console.warn('Ошибка инициализации синхронизации.', error);
+  } catch (e) {
+    console.warn('Initial backend sync failed, continue offline', e);
   }
-  startSyncLoop();
-}
-
-function startSyncLoop() {
-  setInterval(async () => {
-    try {
-      const remote = await loadStateFromBackend();
-      if (!remote || typeof remote !== 'object') {
-        return;
-      }
-      const localJson = JSON.stringify(state);
-      const remoteJson = JSON.stringify(remote);
-      if (localJson !== remoteJson) {
-        isApplyingRemoteState = true;
-        state = remote;
-        applySettingsToState();
-        renderTables();
-        renderNotifications();
-        isApplyingRemoteState = false;
-        saveState();
-      }
-    } catch (error) {
-      console.warn('Ошибка фоновой синхронизации', error);
-    }
-  }, 1500);
 }
 
 function loadState() {
@@ -379,9 +387,7 @@ function getAllowedTableDuration(value) {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (!isApplyingRemoteState) {
-    saveStateToBackend(state);
-  }
+  markStateDirtyForBackend();
 }
 
 function saveSettings() {
