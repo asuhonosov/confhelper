@@ -1835,7 +1835,6 @@ if (settingsForm) {
     applySettingsToState();
     applyVisualSettings();
     renderTables();
-    applyInactiveFilter();
     renderNotifications();
     saveState();
     closeDialog(settingsDialog);
