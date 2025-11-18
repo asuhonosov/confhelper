@@ -2,13 +2,18 @@ const STORAGE_KEY = 'hookah-flow-state-v1';
 const SETTINGS_KEY = 'hookah-flow-settings-v1';
 const PREFERENCES_KEY = 'hookah-flow-preferences-v1';
 
+const VERSION_KEY = 'hookah-flow-version';
+const UPDATED_AT_KEY = 'hookah-flow-updated-at';
+
 const API_BASE = 'https://d5di85pklqmoab3etmus.aqkd4clz.apigw.yandexcloud.net';
 const BAR_ID = 'red-rose-1';
-const SYNC_INTERVAL_MS = 1500;
+const SYNC_INTERVAL_MS = 5000;
 
 let backendStateDirty = false;
 let syncInFlight = false;
 let lastSyncedHash = null;
+let currentVersion = null;
+let lastUpdatedAt = null;
 
 function hashState(currentState) {
   try {
@@ -46,29 +51,43 @@ function markStateDirtyForBackend() {
 }
 
 async function loadStateFromBackend() {
-  const data = await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
-    method: 'GET',
-  });
-  if (!data || typeof data.state !== 'object') {
+  try {
+    const data = await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
+      method: 'GET',
+    });
+    if (!data || typeof data !== 'object') {
+      return null;
+    }
+    if (data.envelope && typeof data.envelope === 'object') {
+      return normalizeEnvelope(data.envelope);
+    }
+    if (data.state && typeof data.state === 'object') {
+      return createEnvelopeFromLegacy(data.state);
+    }
+    return null;
+  } catch (error) {
+    console.warn('Не удалось загрузить состояние с бэкенда, работаем офлайн.', error);
     return null;
   }
-  return data.state;
 }
 
 async function saveStateToBackend() {
-  const currentHash = hashState(state);
-  if (currentHash === lastSyncedHash) {
-    backendStateDirty = false;
-    return;
-  }
+  const payload = {
+    state,
+    settings,
+    client_version: currentVersion ?? 0,
+  };
 
-  await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
+  const data = await apiRequest(`/api/state?bar_id=${encodeURIComponent(BAR_ID)}`, {
     method: 'POST',
-    body: JSON.stringify({ state }),
+    body: JSON.stringify(payload),
   });
 
-  lastSyncedHash = currentHash;
   backendStateDirty = false;
+  if (data && typeof data === 'object' && data.envelope && typeof data.envelope === 'object') {
+    return normalizeEnvelope(data.envelope);
+  }
+  return null;
 }
 
 async function logEvent(type, payload = {}) {
@@ -149,6 +168,8 @@ const controlPanel = document.querySelector('[data-control-panel]');
 const controlPanelToggle = document.querySelector('[data-control-panel-toggle]');
 const controlCollapseMedia = window.matchMedia ? window.matchMedia('(max-width: 1180px)') : null;
 
+loadVersionMetadata();
+
 let settings = loadSettings();
 let state = loadState();
 let preferences = loadPreferences();
@@ -187,14 +208,14 @@ async function backendSyncTick() {
   syncInFlight = true;
   try {
     if (backendStateDirty) {
-      await saveStateToBackend();
+      const envelope = await saveStateToBackend();
+      if (envelope) {
+        applyBackendEnvelope(envelope);
+      }
     } else {
-      const remote = await loadStateFromBackend();
-      if (remote && typeof remote === 'object') {
-        const remoteHash = hashState(remote);
-        if (remoteHash !== lastSyncedHash) {
-          applyStateFromBackend(remote);
-        }
+      const envelope = await loadStateFromBackend();
+      if (envelope && envelope.version > (currentVersion ?? 0)) {
+        applyBackendEnvelope(envelope);
       }
     }
   } catch (e) {
@@ -206,9 +227,23 @@ async function backendSyncTick() {
 
 async function initializeBackendSync() {
   try {
-    const remoteState = await loadStateFromBackend();
-    if (remoteState && typeof remoteState === 'object') {
-      applyStateFromBackend(remoteState);
+    const remoteEnvelope = await loadStateFromBackend();
+    if (remoteEnvelope && typeof remoteEnvelope === 'object') {
+      const localVersion = currentVersion ?? 0;
+      if (remoteEnvelope.version >= localVersion) {
+        applyBackendEnvelope(remoteEnvelope);
+      } else {
+        const envelope = await saveStateToBackend();
+        if (envelope) {
+          applyBackendEnvelope(envelope);
+        }
+      }
+    } else {
+      markStateDirtyForBackend();
+      const envelope = await saveStateToBackend();
+      if (envelope) {
+        applyBackendEnvelope(envelope);
+      }
     }
     logEvent('app_opened', {});
   } catch (e) {
@@ -233,6 +268,17 @@ function loadState() {
   } catch (error) {
     console.warn('Не удалось загрузить сохранённое состояние.', error);
     return createDefaultState();
+  }
+}
+
+function loadVersionMetadata() {
+  const storedVersion = Number(localStorage.getItem(VERSION_KEY));
+  if (Number.isFinite(storedVersion)) {
+    currentVersion = storedVersion;
+  }
+  const storedUpdatedAt = localStorage.getItem(UPDATED_AT_KEY);
+  if (storedUpdatedAt) {
+    lastUpdatedAt = storedUpdatedAt;
   }
 }
 
@@ -280,6 +326,53 @@ function loadPreferences() {
     console.warn('Не удалось загрузить предпочтения.', error);
     return {};
   }
+}
+
+function normalizeStateShape(incomingState) {
+  const fallback = createDefaultState();
+  if (!incomingState || typeof incomingState !== 'object') {
+    return fallback;
+  }
+  const tables = Array.isArray(incomingState.tables) ? incomingState.tables : [];
+  return {
+    tables: TABLE_NAMES.map((name, index) => ensureTableDefaults(tables[index], index)),
+  };
+}
+
+function normalizeSettingsFromEnvelope(envelopeSettings) {
+  const defaults = loadSettings();
+  const source = envelopeSettings && typeof envelopeSettings === 'object' ? envelopeSettings : defaults;
+  const interval = Number(source.intervalMinutes ?? defaults.intervalMinutes);
+  const replacements = Number(source.replacements ?? defaults.replacements);
+  const tableDuration = Number(source.tableDurationMinutes ?? defaults.tableDurationMinutes);
+  const preheatEnabled = typeof source.preheatEnabled === 'boolean' ? source.preheatEnabled : defaults.preheatEnabled;
+  return {
+    intervalMinutes: getAllowedInterval(interval),
+    replacements: getAllowedReplacement(replacements),
+    preheatEnabled,
+    tableDurationMinutes: getAllowedTableDuration(tableDuration),
+  };
+}
+
+function normalizeEnvelope(envelope) {
+  if (!envelope || typeof envelope !== 'object') {
+    return null;
+  }
+  return {
+    version: Number.isFinite(envelope.version) ? envelope.version : currentVersion ?? 0,
+    updatedAt: typeof envelope.updatedAt === 'string' ? envelope.updatedAt : new Date().toISOString(),
+    state: normalizeStateShape(envelope.state),
+    settings: normalizeSettingsFromEnvelope(envelope.settings),
+  };
+}
+
+function createEnvelopeFromLegacy(legacyState) {
+  return normalizeEnvelope({
+    version: (currentVersion ?? 0) + 1,
+    updatedAt: new Date().toISOString(),
+    state: legacyState || createDefaultState(),
+    settings,
+  });
 }
 
 function createDefaultState() {
@@ -394,10 +487,25 @@ function saveState() {
   markStateDirtyForBackend();
 }
 
-function applyStateFromBackend(remoteState) {
-  state = remoteState || {};
+function applyBackendEnvelope(envelope) {
+  if (!envelope || typeof envelope !== 'object') {
+    return;
+  }
+
+  currentVersion = Number.isFinite(envelope.version) ? envelope.version : currentVersion ?? 0;
+  if (Number.isFinite(currentVersion)) {
+    localStorage.setItem(VERSION_KEY, String(currentVersion));
+  }
+  lastUpdatedAt = typeof envelope.updatedAt === 'string' ? envelope.updatedAt : lastUpdatedAt;
+  if (lastUpdatedAt) {
+    localStorage.setItem(UPDATED_AT_KEY, lastUpdatedAt);
+  }
+
+  state = normalizeStateShape(envelope.state);
+  settings = normalizeSettingsFromEnvelope(envelope.settings);
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 
   lastSyncedHash = hashState(state);
   backendStateDirty = false;
@@ -407,8 +515,16 @@ function applyStateFromBackend(remoteState) {
   renderNotifications();
 }
 
+function applyStateFromBackend(remoteState) {
+  const envelope = createEnvelopeFromLegacy(remoteState);
+  if (envelope) {
+    applyBackendEnvelope(envelope);
+  }
+}
+
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  markStateDirtyForBackend();
 }
 
 function savePreferences() {
@@ -1852,6 +1968,7 @@ if (settingsForm) {
     applySettingsToState();
     applyVisualSettings();
     renderTables();
+    applyInactiveFilter();
     renderNotifications();
     saveState();
     closeDialog(settingsDialog);
