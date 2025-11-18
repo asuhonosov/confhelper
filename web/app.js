@@ -14,6 +14,7 @@ let syncInFlight = false;
 let lastSyncedHash = null;
 let currentVersion = null;
 let lastUpdatedAt = null;
+let settingsChangedSinceLastSync = false;
 
 function hashState(currentState) {
   try {
@@ -84,6 +85,7 @@ async function saveStateToBackend() {
   });
 
   backendStateDirty = false;
+  settingsChangedSinceLastSync = false;
   if (data && typeof data === 'object' && data.envelope && typeof data.envelope === 'object') {
     return normalizeEnvelope(data.envelope);
   }
@@ -208,6 +210,11 @@ async function backendSyncTick() {
   syncInFlight = true;
   try {
     if (backendStateDirty) {
+      const localHash = hashState(state);
+      if (localHash === lastSyncedHash && !settingsChangedSinceLastSync) {
+        backendStateDirty = false;
+        return;
+      }
       const envelope = await saveStateToBackend();
       if (envelope) {
         applyBackendEnvelope(envelope);
@@ -509,21 +516,16 @@ function applyBackendEnvelope(envelope) {
 
   lastSyncedHash = hashState(state);
   backendStateDirty = false;
+  settingsChangedSinceLastSync = false;
 
   applySettingsToState();
   renderTables();
   renderNotifications();
 }
 
-function applyStateFromBackend(remoteState) {
-  const envelope = createEnvelopeFromLegacy(remoteState);
-  if (envelope) {
-    applyBackendEnvelope(envelope);
-  }
-}
-
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  settingsChangedSinceLastSync = true;
   markStateDirtyForBackend();
 }
 
@@ -550,20 +552,6 @@ function applySettingsToState() {
       if (!Number.isFinite(hookah.replacements) || hookah.replacements < 1) {
         hookah.replacements = 1;
       }
-
-      if (hookah.status === 'idle') {
-        hookah.expectedEndTime = null;
-        hookah.nextReminderTime = null;
-        hookah.alertNotified = null;
-        hookah.startedAt = null;
-        hookah.lastServiceAt = null;
-        hookah.preheatStartedAt = null;
-        hookah.preheatUntil = null;
-        hookah.orderStartedAt = null;
-        hookah.overtimeStartedAt = null;
-        return;
-      }
-
       if (hookah.status === 'preheat') {
         hookah.expectedEndTime = null;
         hookah.nextReminderTime = null;
@@ -603,7 +591,6 @@ function applySettingsToState() {
     });
     updateTableSession(table);
   });
-  saveState();
 }
 
 function initializePreferences() {
